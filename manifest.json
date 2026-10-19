@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "3f8b2c41-9a7d-4e5b-8c1a-6d2e4f7a9b03",
+    "name": "Advanced Metadata",
+    "description": "Builds a searchable index of custom audio metadata for Advanced Search.",
+    "overview": "Reads audio tags into a local index. Jellyfin is never modified.",
+    "owner": "audioadge",
+    "category": "Metadata",
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "Release 0.1.0.0",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/audioadge/advanced-metadata/releases/download/v0.1.0.0/advanced-metadata.zip",
+        "checksum": "ED0E4AC96739FA4BFBF6ABD5A7AB8AE1",
+        "timestamp": "2026-10-19T14:14:59Z"
+      }
+    ]
+  }
+]
