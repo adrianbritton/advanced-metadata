@@ -6,6 +6,9 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,8 +34,41 @@ jobs:
           name: advanced-metadata
           path: advanced-metadata.zip
 
-      - name: Attach to release
+      - name: Create release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: advanced-metadata.zip
+
+      - name: Update manifest
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MD5=$(md5sum advanced-metadata.zip | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')
+          git fetch --depth=1 origin main
+          git checkout main
+          cat > manifest.json <<EOF
+          [
+            {
+              "guid": "3f8b2c41-9a7d-4e5b-8c1a-6d2e4f7a9b03",
+              "name": "Advanced Metadata",
+              "description": "Builds a searchable index of custom audio metadata for Advanced Search.",
+              "overview": "Reads audio tags into a local index. Jellyfin is never modified.",
+              "owner": "audioadge",
+              "category": "Metadata",
+              "versions": [
+                {
+                  "version": "${VERSION}",
+                  "changelog": "Release ${VERSION}",
+                  "targetAbi": "12.0.0.0",
+                  "sourceUrl": "https://github.com/audioadge/advanced-metadata/releases/download/${GITHUB_REF_NAME}/advanced-metadata.zip",
+                  "checksum": "${MD5}",
+                  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                }
+              ]
+            }
+          ]
+          EOF
+          git add manifest.json
+          git -c user.name=github-actions -c user.email=actions@github.com commit -m "Update manifest to ${VERSION}" || true
+          git push origin main
