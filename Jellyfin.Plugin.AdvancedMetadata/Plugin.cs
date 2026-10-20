@@ -21,7 +21,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        DataFolder = System.IO.Path.Combine(applicationPaths.DataPath, "AdvancedMetadata");
     }
+
+    public static string DataFolder { get; private set; } = string.Empty;
 
     public static Plugin? Instance { get; private set; }
 
