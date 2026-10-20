@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -45,7 +47,9 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           MD5=$(md5sum advanced-metadata.zip | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')
-          git fetch --depth=1 origin main
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git fetch origin main
           git checkout main
           cat > manifest.json <<EOF
           [
@@ -70,5 +74,5 @@ jobs:
           ]
           EOF
           git add manifest.json
-          git -c user.name=github-actions -c user.email=actions@github.com commit -m "Update manifest to ${VERSION}" || true
+          git commit -m "Update manifest to ${VERSION}" || true
           git push origin main
