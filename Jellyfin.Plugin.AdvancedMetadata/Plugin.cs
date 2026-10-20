@@ -38,7 +38,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             new PluginPageInfo
             {
-                Name = Name,
+                Name = "config",
                 EmbeddedResourcePath = GetType().Namespace + ".Web.config.html"
             }
         };
