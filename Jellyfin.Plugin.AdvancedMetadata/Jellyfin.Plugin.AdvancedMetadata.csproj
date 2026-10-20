@@ -23,7 +23,7 @@
     <EmbeddedResource Include="Web/config.html">
       <LogicalName>Jellyfin.Plugin.AdvancedMetadata.Web.config.html</LogicalName>
     </EmbeddedResource>
-    <None Include="thumb.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="thumb.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Jellyfin cannot load the native SQLite library; the server already has one. -->
