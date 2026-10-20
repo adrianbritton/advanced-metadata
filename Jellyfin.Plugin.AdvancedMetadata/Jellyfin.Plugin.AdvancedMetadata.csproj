@@ -17,8 +17,10 @@
     <PackageReference Include="Jellyfin.Model" Version="12.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EmbeddedResource Include="Web/config.html" />
+<ItemGroup>
+    <EmbeddedResource Include="Web/config.html">
+      <LogicalName>Jellyfin.Plugin.AdvancedMetadata.Web.config.html</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
