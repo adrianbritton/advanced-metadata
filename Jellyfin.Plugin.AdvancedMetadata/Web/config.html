@@ -44,7 +44,7 @@
                     </div>
                 </div>
 
-                <div id="amStatus" style="margin:8px 0;min-height:20px"></div>
+                <div id="amStatus" style="margin:8px 0;min-height:22px;font-weight:600"></div>
 
                 <div class="inputContainer">
                     <label class="inputLabel" for="amHier">Tag Hierarchy Options</label>
@@ -123,7 +123,7 @@
                     WARNING: Running a full scan will take significantly longer and may impact the
                     performance of your environment.
                 </p>
-                <p class="fieldDescription">Scanning arrives in a later milestone.</p>
+                <p class="fieldDescription" id="amScanState"></p>
             </section>
 
             <section id="am-adv" style="display:none">
@@ -134,8 +134,9 @@
                 </p>
                 <ul class="fieldDescription">
                     <li>Store file: <span id="amStore">not created yet</span></li>
-                    <li>Schema version: <span id="amSchema">0.1</span></li>
+                    <li>Schema version: <span id="amSchema">0.2</span></li>
                     <li>Mappings: <span id="amCount">0</span></li>
+                    <li>Last scan: <span id="amLast">Never scanned.</span></li>
                 </ul>
                 <button id="amRebuild" is="emby-button" class="raised">Rebuild Store</button>
                 <p class="fieldDescription">
@@ -156,17 +157,26 @@
 
             function el(id) { return document.getElementById(id); }
 
+            // Jellyfin returns camelCase; read either form.
+            function p(o, n) {
+                if (!o) { return undefined; }
+                if (o[n] !== undefined) { return o[n]; }
+                var cap = n.charAt(0).toUpperCase() + n.slice(1);
+                return o[cap];
+            }
+
+            function mappings() { return (cfg && cfg.mappings) ? cfg.mappings : []; }
+
             function load() {
                 if (started) { return; }
                 started = true;
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (c) {
                     cfg = c;
-                    if (!cfg.Mappings) { cfg.Mappings = []; }
-                    el('amDelim').value = cfg.Delimiters || '/|;:';
-                    el('amStore').textContent = cfg.StorePath || 'created on first scan';
-                    el('amSchema').textContent = '0.2';
-                    if (cfg.LastScanSummary) { el('amSchema').parentElement.insertAdjacentHTML('afterend', '<li>Last scan: ' + cfg.LastScanSummary + '</li>'); }
+                    if (!cfg.mappings) { cfg.mappings = []; }
+                    el('amDelim').value = p(cfg, 'delimiters') || '/|;:';
+                    el('amStore').textContent = p(cfg, 'storePath') || 'created on first scan';
+                    el('amLast').textContent = p(cfg, 'lastScanSummary') || 'Never scanned.';
                     render();
                     Dashboard.hideLoadingMsg();
                 });
@@ -174,33 +184,37 @@
 
             function save() {
                 return ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg).then(function () {
-                    Dashboard.processPluginConfigurationUpdateResult();
+                    return ApiClient.getPluginConfiguration(PLUGIN_ID);
+                }).then(function (fresh) {
+                    cfg = fresh;
+                    if (!cfg.mappings) { cfg.mappings = []; }
                     render();
                 });
             }
 
             function render() {
+                var list = mappings();
                 var body = el('amRows');
                 body.innerHTML = '';
-                el('amEmpty').style.display = cfg.Mappings.length ? 'none' : 'block';
-                el('amCount').textContent = cfg.Mappings.length;
+                el('amEmpty').style.display = list.length ? 'none' : 'block';
+                el('amCount').textContent = list.length;
 
-                cfg.Mappings.forEach(function (m) {
+                list.forEach(function (m) {
                     var tr = document.createElement('tr');
                     tr.style.borderTop = '1px solid #444';
                     tr.innerHTML =
-                        '<td style="padding:6px"><input type="checkbox" class="am-sel" data-id="' + m.Id + '"></td>' +
-                        '<td style="padding:6px">' + m.SourceTag + '</td>' +
-                        '<td style="padding:6px">' + (m.DisplayName || m.SourceTag) + '</td>' +
-                        '<td style="padding:6px">' + m.Hierarchy + '</td>' +
-                        '<td style="padding:6px"><a href="#" class="am-del" data-id="' + m.Id + '">Delete</a></td>';
+                        '<td style="padding:6px"><input type="checkbox" class="am-sel" data-id="' + p(m, 'id') + '"></td>' +
+                        '<td style="padding:6px">' + p(m, 'sourceTag') + '</td>' +
+                        '<td style="padding:6px">' + (p(m, 'displayName') || p(m, 'sourceTag')) + '</td>' +
+                        '<td style="padding:6px">' + p(m, 'hierarchy') + '</td>' +
+                        '<td style="padding:6px"><a href="#" class="am-del" data-id="' + p(m, 'id') + '">Delete</a></td>';
                     body.appendChild(tr);
                 });
 
                 body.querySelectorAll('.am-del').forEach(function (a) {
                     a.addEventListener('click', function (e) {
                         e.preventDefault();
-                        cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== a.dataset.id; });
+                        cfg.mappings = mappings().filter(function (x) { return String(p(x, 'id')) !== a.dataset.id; });
                         save();
                     });
                 });
@@ -210,21 +224,21 @@
                 el('amStatus').innerHTML = '<span style="color:' + colour + '">' + msg + '</span>';
             }
 
+            function exists(tag) {
+                return mappings().some(function (m) {
+                    return String(p(m, 'sourceTag')).toLowerCase() === tag.toLowerCase();
+                });
+            }
+
             function createMapping(tag, name, hier) {
                 if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return false; }
-                var exists = cfg.Mappings.some(function (m) {
-                    return m.SourceTag.toLowerCase() === tag.toLowerCase();
-                });
-                if (exists) {
-                    setStatus('Mapping name ' + tag + ' already exists', '#e74c3c');
-                    return false;
-                }
-                cfg.Mappings.push({
-                    Id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
-                    SourceTag: tag,
-                    DisplayName: name || tag,
-                    Hierarchy: hier || 'songs_albums',
-                    CreatedUtc: new Date().toISOString()
+                if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return false; }
+                cfg.mappings.push({
+                    id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+                    sourceTag: tag,
+                    displayName: name || tag,
+                    hierarchy: hier || 'songs_albums',
+                    createdUtc: new Date().toISOString()
                 });
                 return true;
             }
@@ -241,21 +255,19 @@
                 el('amCreate').addEventListener('click', function () {
                     var tag = el('amTag').value.trim();
                     if (!createMapping(tag, el('amName').value.trim(), el('amHier').value)) { return; }
-                    cfg.Delimiters = el('amDelim').value;
-                    setStatus('Mapping Available \u2714', '#2ecc71');
+                    cfg.delimiters = el('amDelim').value;
+                    save().then(function () {
+                        setStatus('\u2714 Mapping "' + tag + '" created and saved.', '#2ecc71');
+                    });
                     el('amTag').value = '';
                     el('amName').value = '';
-                    save();
                 });
 
                 el('amTag').addEventListener('input', function () {
                     var tag = el('amTag').value.trim();
                     if (!tag) { el('amStatus').innerHTML = ''; return; }
-                    var exists = cfg.Mappings.some(function (m) {
-                        return m.SourceTag.toLowerCase() === tag.toLowerCase();
-                    });
-                    setStatus(exists ? 'Mapping name ' + tag + ' already exists' : 'Mapping Available \u2714',
-                              exists ? '#e74c3c' : '#2ecc71');
+                    if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); }
+                    else { setStatus('Mapping Available \u2714', '#2ecc71'); }
                 });
 
                 el('amBulkBtn').addEventListener('click', function () {
@@ -265,8 +277,9 @@
                     var added = 0;
                     names.forEach(function (n) { if (createMapping(n, n, 'songs_albums')) { added++; } });
                     el('amBulk').value = '';
-                    setStatus(added + ' mapping(s) created.', '#2ecc71');
-                    save();
+                    save().then(function () {
+                        setStatus('\u2714 ' + added + ' mapping(s) created and saved.', '#2ecc71');
+                    });
                 });
 
                 el('amDelSel').addEventListener('click', function () {
@@ -274,34 +287,27 @@
                         document.querySelectorAll('.am-sel:checked'),
                         function (c) { return c.dataset.id; });
                     if (!ids.length) { return; }
-                    cfg.Mappings = cfg.Mappings.filter(function (m) { return ids.indexOf(m.Id) < 0; });
+                    cfg.mappings = mappings().filter(function (m) { return ids.indexOf(String(p(m, 'id'))) < 0; });
                     save();
                 });
 
                 el('amDelAll').addEventListener('click', function () {
                     if (!confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
-                    cfg.Mappings = [];
+                    cfg.mappings = [];
                     save();
                 });
 
                 el('amDelim').addEventListener('change', function () {
-                    cfg.Delimiters = el('amDelim').value;
+                    cfg.delimiters = el('amDelim').value;
                     save();
                 });
 
                 function runScan() {
-                    Dashboard.showLoadingMsg();
                     ApiClient.getScheduledTasks().then(function (tasks) {
                         var t = tasks.filter(function (x) { return x.Key === 'AdvancedMetadataScan'; })[0];
-                        if (!t) { Dashboard.hideLoadingMsg(); alert('Scan task not found. Restart Jellyfin.'); return; }
+                        if (!t) { alert('Scan task not found. Restart Jellyfin.'); return; }
                         ApiClient.startScheduledTask(t.Id).then(function () {
-                            Dashboard.hideLoadingMsg();
-                            setTimeout(function () {
-                                ApiClient.getScheduledTasks().then(function (again) {
-                                    var r = again.filter(function (x) { return x.Key === 'AdvancedMetadataScan'; })[0];
-                                    alert(r && r.State ? ('Scan state: ' + r.State) : 'Scan started.');
-                                });
-                            }, 4000);
+                            el('amScanState').textContent = 'Scan started at ' + new Date().toLocaleTimeString();
                         });
                     });
                 }
