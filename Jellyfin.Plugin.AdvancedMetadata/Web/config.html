@@ -164,6 +164,9 @@
                     cfg = c;
                     if (!cfg.Mappings) { cfg.Mappings = []; }
                     el('amDelim').value = cfg.Delimiters || '/|;:';
+                    el('amStore').textContent = cfg.StorePath || 'created on first scan';
+                    el('amSchema').textContent = '0.2';
+                    if (cfg.LastScanSummary) { el('amSchema').parentElement.insertAdjacentHTML('afterend', '<li>Last scan: ' + cfg.LastScanSummary + '</li>'); }
                     render();
                     Dashboard.hideLoadingMsg();
                 });
@@ -286,8 +289,27 @@
                     save();
                 });
 
-                el('amQuick').addEventListener('click', function () { alert('Quick Scan: next milestone.'); });
-                el('amFull').addEventListener('click', function () { alert('Full Rescan: next milestone.'); });
+                function runScan() {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getScheduledTasks().then(function (tasks) {
+                        var t = tasks.filter(function (x) { return x.Key === 'AdvancedMetadataScan'; })[0];
+                        if (!t) { Dashboard.hideLoadingMsg(); alert('Scan task not found. Restart Jellyfin.'); return; }
+                        ApiClient.startScheduledTask(t.Id).then(function () {
+                            Dashboard.hideLoadingMsg();
+                            setTimeout(function () {
+                                ApiClient.getScheduledTasks().then(function (again) {
+                                    var r = again.filter(function (x) { return x.Key === 'AdvancedMetadataScan'; })[0];
+                                    alert(r && r.State ? ('Scan state: ' + r.State) : 'Scan started.');
+                                });
+                            }, 4000);
+                        });
+                    });
+                }
+
+                el('amQuick').addEventListener('click', runScan);
+                el('amFull').addEventListener('click', function () {
+                    if (confirm('WARNING: Running a full scan will take significantly longer and may impact the performance of your environment? Do you want to continue?')) { runScan(); }
+                });
                 el('amRebuild').addEventListener('click', function () { alert('Rebuild Store: later milestone.'); });
             }
 
