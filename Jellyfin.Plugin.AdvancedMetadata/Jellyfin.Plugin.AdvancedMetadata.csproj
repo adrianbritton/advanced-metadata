@@ -26,4 +26,9 @@
     <None Include="thumb.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Jellyfin cannot load the native SQLite library; the server already has one. -->
+  <Target Name="StripNativeRuntimes" AfterTargets="Publish">
+    <RemoveDir Directories="$(PublishDir)runtimes" />
+  </Target>
+
 </Project>
