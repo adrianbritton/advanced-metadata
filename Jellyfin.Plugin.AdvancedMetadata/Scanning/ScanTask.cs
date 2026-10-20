@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Tasks;
@@ -36,7 +38,8 @@ public class ScanTask : IScheduledTask
         if (plugin is null) { return; }
 
         var cfg = plugin.Configuration;
-        plugin.Configuration.StorePath = _store.DatabasePath;
+        cfg.StorePath = _store.DatabasePath;
+
         if (cfg.Mappings.Count == 0)
         {
             cfg.LastScanSummary = "No mappings defined.";
@@ -78,7 +81,7 @@ public class ScanTask : IScheduledTask
 
                 if (m.Hierarchy.Contains("albums"))
                 {
-                    var albumId = item.AlbumEntityId;
+                    var albumId = GetAlbumId(item);
                     if (albumId != Guid.Empty)
                     {
                         var albumRow = _store.UpsertItem(albumId.ToString("N"), "MusicAlbum", null, 0, 0);
@@ -96,5 +99,14 @@ public class ScanTask : IScheduledTask
         plugin.UpdateConfiguration(cfg);
     }
 
-    public System.Collections.Generic.IEnumerable<TaskTriggerInfo> GetDefaultTriggers() => Array.Empty<TaskTriggerInfo>();
+    /// <summary>Album id, tolerating either property name across Jellyfin versions.</summary>
+    private static Guid GetAlbumId(Audio item)
+    {
+        var t = item.GetType();
+        var prop = t.GetProperty("AlbumEntityId") ?? t.GetProperty("AlbumId");
+        if (prop != null && prop.GetValue(item) is Guid g && g != Guid.Empty) { return g; }
+        return item.ParentId;
+    }
+
+    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers() => Array.Empty<TaskTriggerInfo>();
 }
