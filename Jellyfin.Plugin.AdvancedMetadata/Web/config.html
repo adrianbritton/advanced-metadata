@@ -243,7 +243,7 @@
                 if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return false; }
                 if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return false; }
                 cfg.mappings.push({
-                    id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+                    id: guid(),
                     sourceTag: tag,
                     displayName: name || tag,
                     hierarchy: hier || 'songs_albums',
