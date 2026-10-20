@@ -86,7 +86,7 @@
             </section>
 
             <section id="am-manage" style="display:none">
-                <h2>Manage Mapping</h2>
+                <h2>Manage Mapping <a href="#" id="amReload" class="fieldDescription">reload from server</a></h2>
                 <table style="width:100%;border-collapse:collapse">
                     <thead>
                         <tr>
@@ -153,11 +153,9 @@
             'use strict';
             var PLUGIN_ID = '3f8b2c41-9a7d-4e5b-8c1a-6d2e4f7a9b03';
             var cfg = null;
-            var started = false;
 
             function el(id) { return document.getElementById(id); }
 
-            // Jellyfin returns camelCase; read either form.
             function p(o, n) {
                 if (!o) { return undefined; }
                 if (o[n] !== undefined) { return o[n]; }
@@ -165,7 +163,7 @@
                 return o[cap];
             }
 
-            // crypto.randomUUID needs HTTPS; this works everywhere.
+            // crypto.randomUUID needs HTTPS; this works on plain HTTP too.
             function guid() {
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                     var r = Math.random() * 16 | 0;
@@ -173,14 +171,16 @@
                     return v.toString(16);
                 });
             }
-            
+
             function mappings() { return (cfg && cfg.mappings) ? cfg.mappings : []; }
 
+            function setStatus(msg, colour) {
+                el('amStatus').innerHTML = '<span style="color:' + colour + '">' + msg + '</span>';
+            }
+
             function load() {
-                if (started) { return; }
-                started = true;
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (c) {
+                return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (c) {
                     cfg = c;
                     if (!cfg.mappings) { cfg.mappings = []; }
                     el('amDelim').value = p(cfg, 'delimiters') || '/|;:';
@@ -188,16 +188,23 @@
                     el('amLast').textContent = p(cfg, 'lastScanSummary') || 'Never scanned.';
                     render();
                     Dashboard.hideLoadingMsg();
+                }).catch(function (e) {
+                    Dashboard.hideLoadingMsg();
+                    setStatus('LOAD FAILED: ' + e, '#e74c3c');
                 });
             }
 
-            function save() {
+            function save(okMsg) {
                 return ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg).then(function () {
                     return ApiClient.getPluginConfiguration(PLUGIN_ID);
                 }).then(function (fresh) {
                     cfg = fresh;
                     if (!cfg.mappings) { cfg.mappings = []; }
                     render();
+                    if (okMsg) { setStatus(okMsg, '#2ecc71'); }
+                }).catch(function (e) {
+                    render();
+                    setStatus('SAVE FAILED: ' + e, '#e74c3c');
                 });
             }
 
@@ -223,33 +230,18 @@
                 body.querySelectorAll('.am-del').forEach(function (a) {
                     a.addEventListener('click', function (e) {
                         e.preventDefault();
-                        cfg.mappings = mappings().filter(function (x) { return String(p(x, 'id')) !== a.dataset.id; });
+                        cfg.mappings = mappings().filter(function (x) {
+                            return String(p(x, 'id')) !== a.dataset.id;
+                        });
                         save();
                     });
                 });
-            }
-
-            function setStatus(msg, colour) {
-                el('amStatus').innerHTML = '<span style="color:' + colour + '">' + msg + '</span>';
             }
 
             function exists(tag) {
                 return mappings().some(function (m) {
                     return String(p(m, 'sourceTag')).toLowerCase() === tag.toLowerCase();
                 });
-            }
-
-            function createMapping(tag, name, hier) {
-                if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return false; }
-                if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return false; }
-                cfg.mappings.push({
-                    id: guid(),
-                    sourceTag: tag,
-                    displayName: name || tag,
-                    hierarchy: hier || 'songs_albums',
-                    createdUtc: new Date().toISOString()
-                });
-                return true;
             }
 
             function wire() {
@@ -263,13 +255,21 @@
 
                 el('amCreate').addEventListener('click', function () {
                     var tag = el('amTag').value.trim();
-                    if (!createMapping(tag, el('amName').value.trim(), el('amHier').value)) { return; }
-                    cfg.delimiters = el('amDelim').value;
-                    save().then(function () {
-                        setStatus('\u2714 Mapping "' + tag + '" created and saved.', '#2ecc71');
+                    var name = el('amName').value.trim();
+                    if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return; }
+                    if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return; }
+
+                    cfg.mappings.push({
+                        id: guid(),
+                        sourceTag: tag,
+                        displayName: name || tag,
+                        hierarchy: el('amHier').value,
+                        createdUtc: new Date().toISOString()
                     });
+                    cfg.delimiters = el('amDelim').value;
                     el('amTag').value = '';
                     el('amName').value = '';
+                    save('\u2714 Mapping "' + tag + '" created and saved.');
                 });
 
                 el('amTag').addEventListener('input', function () {
@@ -284,11 +284,16 @@
                         .map(function (s) { return s.trim(); })
                         .filter(function (s) { return s; });
                     var added = 0;
-                    names.forEach(function (n) { if (createMapping(n, n, 'songs_albums')) { added++; } });
-                    el('amBulk').value = '';
-                    save().then(function () {
-                        setStatus('\u2714 ' + added + ' mapping(s) created and saved.', '#2ecc71');
+                    names.forEach(function (n) {
+                        if (exists(n)) { return; }
+                        cfg.mappings.push({
+                            id: guid(), sourceTag: n, displayName: n,
+                            hierarchy: 'songs_albums', createdUtc: new Date().toISOString()
+                        });
+                        added++;
                     });
+                    el('amBulk').value = '';
+                    save('\u2714 ' + added + ' mapping(s) created and saved.');
                 });
 
                 el('amDelSel').addEventListener('click', function () {
@@ -296,19 +301,27 @@
                         document.querySelectorAll('.am-sel:checked'),
                         function (c) { return c.dataset.id; });
                     if (!ids.length) { return; }
-                    cfg.mappings = mappings().filter(function (m) { return ids.indexOf(String(p(m, 'id'))) < 0; });
-                    save();
+                    cfg.mappings = mappings().filter(function (m) {
+                        return ids.indexOf(String(p(m, 'id'))) < 0;
+                    });
+                    save('\u2714 Deleted ' + ids.length + ' mapping(s).');
                 });
 
                 el('amDelAll').addEventListener('click', function () {
                     if (!confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
                     cfg.mappings = [];
-                    save();
+                    save('\u2714 All mappings deleted.');
                 });
 
                 el('amDelim').addEventListener('change', function () {
                     cfg.delimiters = el('amDelim').value;
-                    save();
+                    save('\u2714 Delimiters saved.');
+                });
+
+                el('amReload').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    load();
+                    setStatus('Reloaded from server.', '#93a1b1');
                 });
 
                 function runScan() {
