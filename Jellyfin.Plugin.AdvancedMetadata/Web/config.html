@@ -264,6 +264,7 @@
                         ['create', 'manage', 'scan', 'adv'].forEach(function (t) {
                             el('am-' + t).style.display = (t === b.dataset.t) ? '' : 'none';
                         });
+                        if (b.dataset.t === 'manage') { load(); }
                     });
                 });
 
