@@ -1,5 +1,6 @@
-using System;
-using System.Collections.Generic;
+using System;                            // TimeSpan
+using System.Collections.Generic;        // IEnumerable<>
+using MediaBrowser.Model.Tasks;          // IScheduledTask, TaskTriggerInfo, TaskTriggerInfoType
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -10,7 +11,6 @@ using Jellyfin.Plugin.AdvancedMetadata.Store;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AdvancedMetadata.Scanning;
@@ -35,6 +35,18 @@ public class ScanTask : IScheduledTask
     public string Description => "Reads the mapped tags from your audio files into the local Advanced Metadata index.";
 
     public string Category => "Advanced Metadata";
+
+    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
+    {
+        return new[]
+        {
+            new TaskTriggerInfo
+            {
+                Type = TaskTriggerInfoType.DailyTrigger,
+                TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
+            }
+        };
+    }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
