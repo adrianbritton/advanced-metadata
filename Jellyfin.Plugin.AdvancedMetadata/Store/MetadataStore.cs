@@ -20,7 +20,28 @@ public class MetadataStore
         Init();
     }
 
+    /// <summary>Full path to the index database.</summary>
     public string DbPath => _dbPath;
+
+    /// <summary>Alias kept for readability in log output.</summary>
+    public string DatabasePath => _dbPath;
+
+    /// <summary>Size of the index database on disk, in bytes. Returns -1 if absent.</summary>
+    public long SizeBytes
+    {
+        get
+        {
+            try
+            {
+                var fi = new FileInfo(_dbPath);
+                return fi.Exists ? fi.Length : -1;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+    }
 
     private SqliteConnection Open()
     {
@@ -53,6 +74,18 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.Parameters.AddWithValue("$k", key);
         cmd.Parameters.AddWithValue("$v", value);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>True when the file has not changed since it was last indexed.</summary>
+    public bool IsUnchanged(string jellyfinId, long mtime, long size)
+    {
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT mtime, size FROM items WHERE jellyfin_id=$j;";
+        cmd.Parameters.AddWithValue("$j", jellyfinId);
+        using var r = cmd.ExecuteReader();
+        if (!r.Read()) return false;
+        return r.GetInt64(0) == mtime && r.GetInt64(1) == size;
     }
 
     public void SyncMappings(IEnumerable<Mapping> mappings)
@@ -94,7 +127,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         return (long)idc.ExecuteScalar()!;
     }
 
-    private long FieldId(SqliteConnection c, string field)
+    private static long FieldId(SqliteConnection c, string field)
     {
         using var cmd = c.CreateCommand();
         cmd.CommandText = "SELECT id FROM fields WHERE name=$n;";
@@ -104,7 +137,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
     }
 
     /// <summary>Clear then set — used for the song that owns the tag.</summary>
-    public void ReplaceValues(long itemId, string field, IEnumerable<string> values)
+    public void ReplaceFieldValues(long itemId, string field, IEnumerable<string> values)
     {
         using var c = Open();
         var fid = FieldId(c, field);
@@ -118,7 +151,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
             del.ExecuteNonQuery();
         }
 
-        AddValues(c, itemId, fid, values);
+        AddValuesInternal(c, itemId, fid, values);
     }
 
     /// <summary>Accumulate — used for album/artist roll-up targets.</summary>
@@ -127,10 +160,10 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         using var c = Open();
         var fid = FieldId(c, field);
         if (fid == 0) return;
-        AddValues(c, itemId, fid, values);
+        AddValuesInternal(c, itemId, fid, values);
     }
 
-    private static void AddValues(SqliteConnection c, long itemId, long fieldId, IEnumerable<string> values)
+    private static void AddValuesInternal(SqliteConnection c, long itemId, long fieldId, IEnumerable<string> values)
     {
         using var tx = c.BeginTransaction();
         foreach (var v in values)
