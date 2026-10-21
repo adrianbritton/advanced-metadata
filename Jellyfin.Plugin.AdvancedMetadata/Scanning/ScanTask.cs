@@ -48,18 +48,6 @@ public class ScanTask : IScheduledTask
         };
     }
 
-    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
-    {
-        return new[]
-        {
-            new TaskTriggerInfo
-            {
-                Type = TaskTriggerInfoType.DailyTrigger,
-                TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
-            }
-        };
-    }
-
     public Task ExecuteAsync(IProgress<double> progress, CancellationToken ct)
         => Task.Run(() => Run(progress, ct), ct);
 
