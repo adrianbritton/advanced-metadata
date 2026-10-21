@@ -8,12 +8,12 @@
     "category": "Metadata",
     "versions": [
       {
-        "version": "0.2.0.5",
-        "changelog": "Release 0.2.0.5",
+        "version": "0.2.1.0",
+        "changelog": "Release 0.2.1.0",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://github.com/audioadge/advanced-metadata/releases/download/v0.2.0.5/advanced-metadata.zip",
-        "checksum": "73F0C5996C1A092851DED5E453AA54C6",
-        "timestamp": "2026-10-21T13:32:02Z"
+        "sourceUrl": "https://github.com/audioadge/advanced-metadata/releases/download/v0.2.1.0/advanced-metadata.zip",
+        "checksum": "8F313F63D3DDDCC8284F07633E04748B",
+        "timestamp": "2026-10-21T14:29:50Z"
       }
     ]
   }
