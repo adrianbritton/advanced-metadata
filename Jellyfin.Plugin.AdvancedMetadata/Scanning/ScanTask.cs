@@ -36,6 +36,18 @@ public class ScanTask : IScheduledTask
 
     public string Category => "Advanced Metadata";
 
+    public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
+    {
+        return new[]
+        {
+            new TaskTriggerInfo
+            {
+                Type = TaskTriggerInfoType.DailyTrigger,
+                TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
+            }
+        };
+    }
+
     public Task ExecuteAsync(IProgress<double> progress, CancellationToken ct)
         => Task.Run(() => Run(progress, ct), ct);
 
@@ -62,9 +74,13 @@ public class ScanTask : IScheduledTask
             var delims = cfg.Delimiters.ToCharArray();
 
             _store.SyncMappings(mappings);
-            foreach (var m in mappings)
+
+            if (full)
             {
-                _store.ClearField(m.SourceTag);
+                foreach (var m in mappings)
+                {
+                    _store.ClearField(m.SourceTag);
+                }
             }
 
             var items = _library.GetItemList(new InternalItemsQuery
@@ -76,11 +92,14 @@ public class ScanTask : IScheduledTask
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
 
-            _logger.LogInformation("Advanced Metadata: scanning {Count} tracks (full rescan: {Full})", items.Count, full);
+            _logger.LogInformation(
+                "Advanced Metadata: scanning {Count} tracks (full rescan: {Full}) into {Path}",
+                items.Count, full, _store.DatabasePath);
 
             var done = 0;
             var values = 0;
             var errors = 0;
+            var skipped = 0;
 
             foreach (var item in items)
             {
@@ -101,11 +120,32 @@ public class ScanTask : IScheduledTask
                 var path = item.Path;
                 if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
 
-                long itemId;
+                var key = item.Id.ToString("N");
+                long mtime;
+                long size;
                 try
                 {
                     var fi = new FileInfo(path);
-                    itemId = _store.UpsertItem(item.Id.ToString("N"), "Audio", path, fi.LastWriteTimeUtc.Ticks, fi.Length);
+                    mtime = fi.LastWriteTimeUtc.Ticks;
+                    size = fi.Length;
+                }
+                catch (Exception ex)
+                {
+                    errors++;
+                    _logger.LogWarning(ex, "Advanced Metadata: could not stat {Path}", path);
+                    continue;
+                }
+
+                if (!full && _store.IsUnchanged(key, mtime, size))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                long itemId;
+                try
+                {
+                    itemId = _store.UpsertItem(key, "Audio", path, mtime, size);
                 }
                 catch (Exception ex)
                 {
@@ -119,7 +159,7 @@ public class ScanTask : IScheduledTask
                     var vals = ReadTag(path, m.SourceTag, delims);
                     if (vals.Count == 0) continue;
 
-                    _store.ReplaceValues(itemId, m.SourceTag, vals);
+                    _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
                     values += vals.Count;
 
                     if (m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
@@ -148,9 +188,11 @@ public class ScanTask : IScheduledTask
             cfg.LastScanValues = values;
             cfg.LastScanErrors = errors;
             cfg.LastScanFinishedUtc = DateTime.UtcNow;
-            cfg.LastScanSummary = $"Scan complete: {done} tracks read, {values} values indexed, {errors} errors.";
+            cfg.LastScanSummary = $"Scan complete: {done} tracks read ({skipped} unchanged, skipped), {values} values indexed, {errors} errors.";
             plugin.UpdateConfiguration(cfg);
-            _logger.LogInformation("Advanced Metadata: {Summary}", cfg.LastScanSummary);
+            _logger.LogInformation(
+                "Advanced Metadata: {Summary} Index size: {Bytes} bytes",
+                cfg.LastScanSummary, _store.SizeBytes);
         }
         catch (Exception ex)
         {
