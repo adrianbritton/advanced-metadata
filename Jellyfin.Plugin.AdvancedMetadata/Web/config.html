@@ -156,6 +156,7 @@
 
             function el(id) { return document.getElementById(id); }
 
+            // Jellyfin returns plugin config in PascalCase. Read either, to be safe.
             function p(o, n) {
                 if (!o) { return undefined; }
                 if (o[n] !== undefined) { return o[n]; }
@@ -163,7 +164,6 @@
                 return o[cap];
             }
 
-            // crypto.randomUUID needs HTTPS; this works on plain HTTP too.
             function guid() {
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                     var r = Math.random() * 16 | 0;
@@ -172,7 +172,11 @@
                 });
             }
 
-            function mappings() { return (cfg && cfg.mappings) ? cfg.mappings : []; }
+            function mappings() {
+                if (!cfg) { return []; }
+                if (!cfg.Mappings) { cfg.Mappings = []; }
+                return cfg.Mappings;
+            }
 
             function setStatus(msg, colour) {
                 el('amStatus').innerHTML = '<span style="color:' + colour + '">' + msg + '</span>';
@@ -182,10 +186,10 @@
                 Dashboard.showLoadingMsg();
                 return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (c) {
                     cfg = c;
-                    if (!cfg.mappings) { cfg.mappings = []; }
-                    el('amDelim').value = p(cfg, 'delimiters') || '/|;:';
-                    el('amStore').textContent = p(cfg, 'storePath') || 'created on first scan';
-                    el('amLast').textContent = p(cfg, 'lastScanSummary') || 'Never scanned.';
+                    if (!cfg.Mappings) { cfg.Mappings = []; }
+                    el('amDelim').value = p(cfg, 'Delimiters') || '/|;:';
+                    el('amStore').textContent = p(cfg, 'StorePath') || 'created on first scan';
+                    el('amLast').textContent = p(cfg, 'LastScanSummary') || 'Never scanned.';
                     render();
                     Dashboard.hideLoadingMsg();
                 }).catch(function (e) {
@@ -196,28 +200,25 @@
 
             function save(okMsg) {
                 setStatus('Saving...', '#93a1b1');
-                console.log('AM save: posting config', cfg);
+                console.log('AM save: posting', cfg);
                 try {
                     ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg)
                         .then(function () {
-                            setStatus('Saved. Re-reading from server...', '#93a1b1');
-                            console.log('AM save: post ok, re-reading');
+                            setStatus('Saved. Re-reading...', '#93a1b1');
                             return ApiClient.getPluginConfiguration(PLUGIN_ID);
                         })
                         .then(function (fresh) {
                             cfg = fresh;
-                            if (!cfg.mappings) { cfg.mappings = []; }
+                            if (!cfg.Mappings) { cfg.Mappings = []; }
                             render();
-                            console.log('AM save: re-read returned', cfg.mappings.length, 'mappings');
+                            console.log('AM save: re-read returned', cfg.Mappings.length, 'mappings');
                             setStatus(okMsg || 'Saved.', '#2ecc71');
                         })
                         .catch(function (e) {
-                            var msg = (e && e.message) ? e.message : String(e);
                             console.log('AM save: FAILED', e);
-                            setStatus('SAVE FAILED: ' + msg, '#e74c3c');
+                            setStatus('SAVE FAILED: ' + ((e && e.message) ? e.message : String(e)), '#e74c3c');
                         });
                 } catch (e) {
-                    console.log('AM save: THREW', e);
                     setStatus('SAVE THREW: ' + e, '#e74c3c');
                 }
             }
@@ -233,28 +234,28 @@
                     var tr = document.createElement('tr');
                     tr.style.borderTop = '1px solid #444';
                     tr.innerHTML =
-                        '<td style="padding:6px"><input type="checkbox" class="am-sel" data-id="' + p(m, 'id') + '"></td>' +
-                        '<td style="padding:6px">' + p(m, 'sourceTag') + '</td>' +
-                        '<td style="padding:6px">' + (p(m, 'displayName') || p(m, 'sourceTag')) + '</td>' +
-                        '<td style="padding:6px">' + p(m, 'hierarchy') + '</td>' +
-                        '<td style="padding:6px"><a href="#" class="am-del" data-id="' + p(m, 'id') + '">Delete</a></td>';
+                        '<td style="padding:6px"><input type="checkbox" class="am-sel" data-id="' + p(m, 'Id') + '"></td>' +
+                        '<td style="padding:6px">' + p(m, 'SourceTag') + '</td>' +
+                        '<td style="padding:6px">' + (p(m, 'DisplayName') || p(m, 'SourceTag')) + '</td>' +
+                        '<td style="padding:6px">' + p(m, 'Hierarchy') + '</td>' +
+                        '<td style="padding:6px"><a href="#" class="am-del" data-id="' + p(m, 'Id') + '">Delete</a></td>';
                     body.appendChild(tr);
                 });
 
                 body.querySelectorAll('.am-del').forEach(function (a) {
                     a.addEventListener('click', function (e) {
                         e.preventDefault();
-                        cfg.mappings = mappings().filter(function (x) {
-                            return String(p(x, 'id')) !== a.dataset.id;
+                        cfg.Mappings = mappings().filter(function (x) {
+                            return String(p(x, 'Id')) !== a.dataset.id;
                         });
-                        save();
+                        save('\u2714 Mapping deleted.');
                     });
                 });
             }
 
             function exists(tag) {
                 return mappings().some(function (m) {
-                    return String(p(m, 'sourceTag')).toLowerCase() === tag.toLowerCase();
+                    return String(p(m, 'SourceTag')).toLowerCase() === tag.toLowerCase();
                 });
             }
 
@@ -274,14 +275,14 @@
                     if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return; }
                     if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return; }
 
-                    cfg.mappings.push({
-                        id: guid(),
-                        sourceTag: tag,
-                        displayName: name || tag,
-                        hierarchy: el('amHier').value,
-                        createdUtc: new Date().toISOString()
+                    mappings().push({
+                        Id: guid(),
+                        SourceTag: tag,
+                        DisplayName: name || tag,
+                        Hierarchy: el('amHier').value,
+                        CreatedUtc: new Date().toISOString()
                     });
-                    cfg.delimiters = el('amDelim').value;
+                    cfg.Delimiters = el('amDelim').value;
                     el('amTag').value = '';
                     el('amName').value = '';
                     save('\u2714 Mapping "' + tag + '" created and saved.');
@@ -301,9 +302,9 @@
                     var added = 0;
                     names.forEach(function (n) {
                         if (exists(n)) { return; }
-                        cfg.mappings.push({
-                            id: guid(), sourceTag: n, displayName: n,
-                            hierarchy: 'songs_albums', createdUtc: new Date().toISOString()
+                        mappings().push({
+                            Id: guid(), SourceTag: n, DisplayName: n,
+                            Hierarchy: 'songs_albums', CreatedUtc: new Date().toISOString()
                         });
                         added++;
                     });
@@ -316,20 +317,20 @@
                         document.querySelectorAll('.am-sel:checked'),
                         function (c) { return c.dataset.id; });
                     if (!ids.length) { return; }
-                    cfg.mappings = mappings().filter(function (m) {
-                        return ids.indexOf(String(p(m, 'id'))) < 0;
+                    cfg.Mappings = mappings().filter(function (m) {
+                        return ids.indexOf(String(p(m, 'Id'))) < 0;
                     });
                     save('\u2714 Deleted ' + ids.length + ' mapping(s).');
                 });
 
                 el('amDelAll').addEventListener('click', function () {
                     if (!confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
-                    cfg.mappings = [];
+                    cfg.Mappings = [];
                     save('\u2714 All mappings deleted.');
                 });
 
                 el('amDelim').addEventListener('change', function () {
-                    cfg.delimiters = el('amDelim').value;
+                    cfg.Delimiters = el('amDelim').value;
                     save('\u2714 Delimiters saved.');
                 });
 
