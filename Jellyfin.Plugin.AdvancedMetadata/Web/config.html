@@ -1,368 +1,548 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Advanced Metadata</title>
+<meta charset="utf-8" />
+<title>Advanced Metadata</title>
+<style>
+  #AdvancedMetadataConfigPage { padding: 1.2em 1.4em 3em; max-width: 1100px; }
+  .am-tabs { display:flex; gap:.3em; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,.14); margin-bottom:1.4em; }
+  .am-tab { background:transparent; border:0; border-bottom:2px solid transparent; color:inherit; opacity:.68;
+            padding:.65em 1.15em; font-size:1em; cursor:pointer; border-radius:4px 4px 0 0; }
+  .am-tab:hover { opacity:1; background:rgba(255,255,255,.05); }
+  .am-tab[aria-selected="true"] { opacity:1; border-bottom-color:#52b54b; font-weight:600; }
+  .am-panel { display:none; }
+  .am-panel.active { display:block; }
+
+  .am-field { margin-bottom:1.1em; max-width:560px; }
+  .am-label { display:flex; align-items:center; gap:.45em; font-weight:600; margin-bottom:.4em; }
+  .am-label .emby-input, .am-label .emby-select { font-weight:400; }
+  .am-help { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; flex:0 0 17px;
+             border-radius:50%; background:rgba(255,255,255,.16); font-size:11px; font-weight:700; cursor:help; }
+  .am-hint { font-size:.82em; opacity:.62; margin-top:.35em; }
+
+  .am-actions { display:flex; gap:.6em; flex-wrap:wrap; margin-top:1.3em; }
+  .am-actions .emby-button { min-width:170px; margin:0; }
+
+  .am-status { display:none; margin-top:.9em; max-width:620px; padding:.72em .95em; border-radius:4px;
+               border-left:4px solid #888; font-size:.94em; line-height:1.45; }
+  .am-status.show { display:block; }
+  .am-status.ok   { background:rgba(82,181,75,.15);  border-left-color:#52b54b; }
+  .am-status.err  { background:rgba(224,86,86,.15);  border-left-color:#e05656; }
+  .am-status.warn { background:rgba(226,160,63,.15); border-left-color:#e2a03f; }
+  .am-status.info { background:rgba(96,165,250,.14); border-left-color:#60a5fa; }
+
+  .am-table { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:.6em; }
+  .am-table th { text-align:left; font-size:.82em; text-transform:uppercase; letter-spacing:.04em; opacity:.65;
+                 padding:.55em .6em; border-bottom:1px solid rgba(255,255,255,.14); }
+  .am-table td { padding:.62em .6em; border-bottom:1px solid rgba(255,255,255,.07); vertical-align:middle;
+                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .am-table .am-mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.9em; }
+  .am-link { background:none; border:0; padding:0; color:#6fb0ff; cursor:pointer; font-size:.9em; text-decoration:none; }
+  .am-link:hover { text-decoration:underline; }
+  .am-link-danger { color:#ff8080; }
+  .am-empty { opacity:.6; padding:1.4em .2em; font-style:italic; }
+
+  .am-progresswrap { margin-top:1em; max-width:620px; }
+  .am-progressbar { height:10px; border-radius:6px; background:rgba(255,255,255,.13); overflow:hidden; }
+  .am-progressbar > div { height:100%; width:0; background:#52b54b; transition:width .4s ease; }
+  .am-progresstext { margin-top:.5em; font-size:.9em; opacity:.85; }
+
+  .am-card { border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:1em 1.1em; max-width:620px; margin-bottom:1.1em; }
+  .am-kv { display:flex; justify-content:space-between; gap:1em; padding:.4em 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:.92em; }
+  .am-kv:last-child { border-bottom:0; }
+  .am-kv span:first-child { opacity:.68; }
+  .am-kv span:last-child { font-family:ui-monospace,Menlo,Consolas,monospace; text-align:right; word-break:break-all; }
+  .am-sep { height:1px; background:rgba(255,255,255,.12); margin:2em 0 1.6em; max-width:620px; }
+</style>
 </head>
 <body>
-<div id="AdvancedMetadataConfigPage" data-role="page"
-     class="page type-interior pluginConfigurationPage"
-     data-require="emby-input,emby-button,emby-select,emby-checkbox">
+<div id="AdvancedMetadataConfigPage">
 
-    <div data-role="content">
-        <div class="content-primary">
+  <div class="am-tabs" role="tablist">
+    <button class="am-tab" role="tab" data-tab="create"  aria-selected="true">Create Mapping</button>
+    <button class="am-tab" role="tab" data-tab="manage"  aria-selected="false">Manage Mappings</button>
+    <button class="am-tab" role="tab" data-tab="scan"    aria-selected="false">Scan Mappings</button>
+    <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false">Advanced</button>
+  </div>
 
-            <h1>Advanced Metadata</h1>
-            <p class="fieldDescription">
-                Builds a searchable index of custom audio metadata. Jellyfin is never modified.
-            </p>
+  <!-- ============ CREATE ============ -->
+  <div class="am-panel active" data-panel="create">
+    <h2 style="margin-top:0">Create Single Mapping</h2>
 
-            <div style="display:flex;gap:4px;border-bottom:1px solid #444;margin:16px 0">
-                <button class="am-tab" data-t="create" style="padding:10px 16px">Create Mapping</button>
-                <button class="am-tab" data-t="manage" style="padding:10px 16px">Manage Mapping</button>
-                <button class="am-tab" data-t="scan"   style="padding:10px 16px">Scan Mappings</button>
-                <button class="am-tab" data-t="adv"    style="padding:10px 16px">Advanced</button>
-            </div>
-
-            <section id="am-create">
-                <h2>Create Single Mapping</h2>
-
-                <div class="inputContainer">
-                    <label class="inputLabel" for="amTag">Enter Tag name for mapping</label>
-                    <input id="amTag" type="text" is="emby-input" />
-                    <div class="fieldDescription">
-                        This must match the ID3 tag EXACTLY as written in your files/audio library.
-                    </div>
-                </div>
-
-                <div class="inputContainer">
-                    <label class="inputLabel" for="amName">Enter preferred Jellyfin display name</label>
-                    <input id="amName" type="text" is="emby-input" />
-                    <div class="fieldDescription">
-                        Enter the desired display name, such as Record Label (instead of LABEL).
-                        If this is blank, the ID3 tag name will be used.
-                    </div>
-                </div>
-
-                <div id="amStatus" style="margin:8px 0;min-height:22px;font-weight:600"></div>
-
-                <div class="inputContainer">
-                    <label class="inputLabel" for="amHier">Tag Hierarchy Options</label>
-                    <select id="amHier" is="emby-select">
-                        <option value="songs_albums">Songs AND Parent Albums</option>
-                        <option value="songs">Songs only</option>
-                        <option value="albums">Parent Albums only</option>
-                        <option value="songs_albums_artists">Songs, Parent Albums AND Artists</option>
-                    </select>
-                    <div class="fieldDescription">
-                        Choose where the tag is applied. Songs only applies it to individual tracks.
-                        Adding Parent Albums also applies it to the album, which is needed for
-                        album-level searches.
-                    </div>
-                </div>
-
-                <div class="inputContainer">
-                    <label class="inputLabel" for="amDelim">Multiple Value Delimiters</label>
-                    <input id="amDelim" type="text" is="emby-input" />
-                    <div class="fieldDescription">
-                        If a tag holds several values separated by a character — for example Pop/Rock —
-                        enter that character here. Each value becomes its own searchable entry.
-                    </div>
-                </div>
-
-                <button id="amCreate" is="emby-button" class="raised button-submit">Create Mapping</button>
-
-                <hr style="margin:24px 0" />
-
-                <h2>Bulk create</h2>
-                <div class="fieldDescription">
-                    Add several mappings at once by entering their tag names separated by commas.
-                </div>
-                <div class="inputContainer">
-                    <input id="amBulk" type="text" is="emby-input"
-                           placeholder="e.g. COMPOSER, LABEL, STYLE" />
-                </div>
-                <button id="amBulkBtn" is="emby-button" class="raised">Create Mappings</button>
-            </section>
-
-            <section id="am-manage" style="display:none">
-                <h2>Manage Mapping <a href="#" id="amReload" class="fieldDescription">reload from server</a></h2>
-                <table style="width:100%;border-collapse:collapse">
-                    <thead>
-                        <tr>
-                            <th style="width:32px"></th>
-                            <th style="text-align:left">Source Tag</th>
-                            <th style="text-align:left">Display Name</th>
-                            <th style="text-align:left">Hierarchy</th>
-                            <th style="text-align:left">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="amRows"></tbody>
-                </table>
-                <p class="fieldDescription" id="amEmpty">No mappings yet.</p>
-
-                <div style="margin-top:16px">
-                    <label style="display:block;margin-bottom:8px">
-                        <input type="checkbox" id="amAllLevels" is="emby-checkbox" />
-                        Select to remove Tag data for Songs, Albums AND Artists
-                    </label>
-                    <button id="amDelSel" is="emby-button" class="raised">Delete selected</button>
-                    <button id="amDelAll" is="emby-button" class="raised">Delete all mappings</button>
-                </div>
-            </section>
-
-            <section id="am-scan" style="display:none">
-                <h2>Scan Mappings</h2>
-                <p class="fieldDescription">
-                    A Quick Scan processes only files that have changed since the last scan, so it is
-                    fast. Use Full Rescan only when you need to re-read everything.
-                </p>
-                <button id="amQuick" is="emby-button" class="raised button-submit">Quick Scan</button>
-                <button id="amFull" is="emby-button" class="raised">Full Rescan</button>
-                <p class="fieldDescription" style="margin-top:12px">
-                    WARNING: Running a full scan will take significantly longer and may impact the
-                    performance of your environment.
-                </p>
-                <p class="fieldDescription" id="amScanState"></p>
-            </section>
-
-            <section id="am-adv" style="display:none">
-                <h2>Advanced</h2>
-                <p class="fieldDescription">
-                    WARNING: This setting is for advanced users only and should be used with caution.
-                    A full database backup is strongly recommended before using this tool.
-                </p>
-                <ul class="fieldDescription">
-                    <li>Store file: <span id="amStore">not created yet</span></li>
-                    <li>Schema version: <span id="amSchema">0.2</span></li>
-                    <li>Mappings: <span id="amCount">0</span></li>
-                    <li>Last scan: <span id="amLast">Never scanned.</span></li>
-                </ul>
-                <button id="amRebuild" is="emby-button" class="raised">Rebuild Store</button>
-                <p class="fieldDescription">
-                    Rebuild Store deletes and recreates the database file. Use it if the store is
-                    corrupted or after a schema update. It is followed by a full rescan.
-                </p>
-            </section>
-
-        </div>
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="This must match the ID3 tag EXACTLY as written in your files.">?</span>
+        Enter tag name for mapping
+      </div>
+      <input id="newTag" class="emby-input" type="text" placeholder="e.g. LABEL" autocomplete="off" />
+      <div class="am-hint">Case-insensitive. Must match the tag exactly as written in your files.</div>
     </div>
 
-    <script type="text/javascript">
-        (function () {
-            'use strict';
-            var PLUGIN_ID = '3f8b2c41-9a7d-4e5b-8c1a-6d2e4f7a9b03';
-            var cfg = null;
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Enter the desired display name, such as Record Label (instead of LABEL). If blank, the tag name is used.">?</span>
+        Preferred display name (optional)
+      </div>
+      <input id="newDisplay" class="emby-input" type="text" placeholder="e.g. Record Label" autocomplete="off" />
+    </div>
 
-            function el(id) { return document.getElementById(id); }
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Select if the scan should index Songs only, or also populate Albums and/or Artists.">?</span>
+        Where should this data appear?
+      </div>
+      <select id="newHierarchy" class="emby-select">
+        <option value="songs">Songs only</option>
+        <option value="songs_albums" selected>Songs + Parent Albums</option>
+        <option value="albums">Parent Albums only</option>
+        <option value="songs_albums_artists">Songs + Albums + Artists</option>
+      </select>
+    </div>
 
-            // Jellyfin returns plugin config in PascalCase. Read either, to be safe.
-            function p(o, n) {
-                if (!o) { return undefined; }
-                if (o[n] !== undefined) { return o[n]; }
-                var cap = n.charAt(0).toUpperCase() + n.slice(1);
-                return o[cap];
-            }
+    <div class="am-actions">
+      <button id="btnCreate" class="emby-button raised button-submit">Create Mapping</button>
+    </div>
+    <div id="createStatus" class="am-status"></div>
 
-            function guid() {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-                    var r = Math.random() * 16 | 0;
-                    var v = c === 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                });
-            }
+    <div class="am-sep"></div>
 
-            function mappings() {
-                if (!cfg) { return []; }
-                if (!cfg.Mappings) { cfg.Mappings = []; }
-                return cfg.Mappings;
-            }
+    <h2>Create Multiple Mappings</h2>
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Comma-separated list of tag names for bulk mapping, e.g. COMPOSER, LABEL, STYLE.">?</span>
+        Comma-separated list of tag names
+      </div>
+      <input id="bulkTags" class="emby-input" type="text" placeholder="e.g. CATALOGNUMBER, OWNER, OWNEDMEDIA" autocomplete="off" />
+      <div class="am-hint">Display name defaults to the tag name. All entries use the hierarchy below.</div>
+    </div>
+    <div class="am-field">
+      <div class="am-label">Hierarchy for bulk entries</div>
+      <select id="bulkHierarchy" class="emby-select">
+        <option value="songs">Songs only</option>
+        <option value="songs_albums" selected>Songs + Parent Albums</option>
+        <option value="albums">Parent Albums only</option>
+        <option value="songs_albums_artists">Songs + Albums + Artists</option>
+      </select>
+    </div>
+    <div class="am-actions">
+      <button id="btnBulk" class="emby-button raised button-submit">Create Bulk Mappings</button>
+    </div>
+    <div id="bulkStatus" class="am-status"></div>
+  </div>
 
-            function setStatus(msg, colour) {
-                el('amStatus').innerHTML = '<span style="color:' + colour + '">' + msg + '</span>';
-            }
+  <!-- ============ MANAGE ============ -->
+  <div class="am-panel" data-panel="manage">
+    <h2 style="margin-top:0">Manage Mappings</h2>
+    <table class="am-table">
+      <thead>
+        <tr>
+          <th style="width:24%">Tag</th>
+          <th style="width:30%">Display name</th>
+          <th style="width:24%">Applies to</th>
+          <th style="width:14%">Created</th>
+          <th style="width:8%"></th>
+        </tr>
+      </thead>
+      <tbody id="manageRows"></tbody>
+    </table>
+    <div id="manageEmpty" class="am-empty">No mappings yet. Create one on the Create Mapping tab.</div>
 
-            function load() {
-                Dashboard.showLoadingMsg();
-                return ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (c) {
-                    cfg = c;
-                    if (!cfg.Mappings) { cfg.Mappings = []; }
-                    el('amDelim').value = p(cfg, 'Delimiters') || '/|;:';
-                    el('amStore').textContent = p(cfg, 'StorePath') || 'created on first scan';
-                    el('amLast').textContent = p(cfg, 'LastScanSummary') || 'Never scanned.';
-                    render();
-                    Dashboard.hideLoadingMsg();
-                }).catch(function (e) {
-                    Dashboard.hideLoadingMsg();
-                    setStatus('LOAD FAILED: ' + e, '#e74c3c');
-                });
-            }
+    <div class="am-actions" style="margin-top:1.6em">
+      <button id="btnDeleteAll" class="emby-button raised">Delete All Mappings</button>
+      <button id="btnRebuild" class="emby-button raised">Rebuild Store</button>
+    </div>
+    <div id="manageStatus" class="am-status"></div>
+  </div>
 
-            function save(okMsg) {
-                setStatus('Saving...', '#93a1b1');
-                console.log('AM save: posting', cfg);
-                try {
-                    ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg)
-                        .then(function () {
-                            setStatus('Saved. Re-reading...', '#93a1b1');
-                            return ApiClient.getPluginConfiguration(PLUGIN_ID);
-                        })
-                        .then(function (fresh) {
-                            cfg = fresh;
-                            if (!cfg.Mappings) { cfg.Mappings = []; }
-                            render();
-                            console.log('AM save: re-read returned', cfg.Mappings.length, 'mappings');
-                            setStatus(okMsg || 'Saved.', '#2ecc71');
-                        })
-                        .catch(function (e) {
-                            console.log('AM save: FAILED', e);
-                            setStatus('SAVE FAILED: ' + ((e && e.message) ? e.message : String(e)), '#e74c3c');
-                        });
-                } catch (e) {
-                    setStatus('SAVE THREW: ' + e, '#e74c3c');
-                }
-            }
+  <!-- ============ SCAN ============ -->
+  <div class="am-panel" data-panel="scan">
+    <h2 style="margin-top:0">Scan Mappings</h2>
+    <p style="max-width:620px; opacity:.85">
+      The scan reads your mapped tags into the plugin's own index. Your audio files and Jellyfin's
+      database are never modified.
+    </p>
 
-            function render() {
-                var list = mappings();
-                var body = el('amRows');
-                body.innerHTML = '';
-                el('amEmpty').style.display = list.length ? 'none' : 'block';
-                el('amCount').textContent = list.length;
+    <div class="am-card">
+      <label style="display:flex; gap:.6em; align-items:flex-start; cursor:pointer">
+        <input id="chkFull" type="checkbox" style="margin-top:.25em" />
+        <span>
+          <strong>Full rescan</strong>
+          <div class="am-hint">Ignore the incremental gate and re-read every track. Takes significantly longer.</div>
+        </span>
+      </label>
+    </div>
 
-                list.forEach(function (m) {
-                    var tr = document.createElement('tr');
-                    tr.style.borderTop = '1px solid #444';
-                    tr.innerHTML =
-                        '<td style="padding:6px"><input type="checkbox" class="am-sel" data-id="' + p(m, 'Id') + '"></td>' +
-                        '<td style="padding:6px">' + p(m, 'SourceTag') + '</td>' +
-                        '<td style="padding:6px">' + (p(m, 'DisplayName') || p(m, 'SourceTag')) + '</td>' +
-                        '<td style="padding:6px">' + p(m, 'Hierarchy') + '</td>' +
-                        '<td style="padding:6px"><a href="#" class="am-del" data-id="' + p(m, 'Id') + '">Delete</a></td>';
-                    body.appendChild(tr);
-                });
+    <div class="am-actions">
+      <button id="btnScan" class="emby-button raised button-submit">Start Scan</button>
+      <button id="btnCancel" class="emby-button raised">Stop Scan</button>
+    </div>
+    <div id="scanStatus" class="am-status"></div>
 
-                body.querySelectorAll('.am-del').forEach(function (a) {
-                    a.addEventListener('click', function (e) {
-                        e.preventDefault();
-                        cfg.Mappings = mappings().filter(function (x) {
-                            return String(p(x, 'Id')) !== a.dataset.id;
-                        });
-                        save('\u2714 Mapping deleted.');
-                    });
-                });
-            }
+    <div class="am-progresswrap">
+      <div class="am-progressbar"><div id="scanBar"></div></div>
+      <div id="scanText" class="am-progresstext">Checking scan state…</div>
+    </div>
 
-            function exists(tag) {
-                return mappings().some(function (m) {
-                    return String(p(m, 'SourceTag')).toLowerCase() === tag.toLowerCase();
-                });
-            }
+    <div class="am-sep"></div>
 
-            function wire() {
-                document.querySelectorAll('.am-tab').forEach(function (b) {
-                    b.addEventListener('click', function () {
-                        ['create', 'manage', 'scan', 'adv'].forEach(function (t) {
-                            el('am-' + t).style.display = (t === b.dataset.t) ? '' : 'none';
-                        });
-                        if (b.dataset.t === 'manage') { load(); }
-                    });
-                });
+    <h3>Last scan</h3>
+    <div class="am-card" id="scanSummaryCard">
+      <div class="am-kv"><span>Summary</span><span id="kvSummary">—</span></div>
+      <div class="am-kv"><span>Tracks read</span><span id="kvItems">—</span></div>
+      <div class="am-kv"><span>Values indexed</span><span id="kvValues">—</span></div>
+      <div class="am-kv"><span>Errors</span><span id="kvErrors">—</span></div>
+      <div class="am-kv"><span>Started</span><span id="kvStarted">—</span></div>
+      <div class="am-kv"><span>Finished</span><span id="kvFinished">—</span></div>
+    </div>
+  </div>
 
-                el('amCreate').addEventListener('click', function () {
-                    var tag = el('amTag').value.trim();
-                    var name = el('amName').value.trim();
-                    if (!tag) { setStatus('Tag name is required.', '#e6a23c'); return; }
-                    if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); return; }
+  <!-- ============ ADVANCED ============ -->
+  <div class="am-panel" data-panel="advanced">
+    <h2 style="margin-top:0">Advanced</h2>
 
-                    mappings().push({
-                        Id: guid(),
-                        SourceTag: tag,
-                        DisplayName: name || tag,
-                        Hierarchy: el('amHier').value,
-                        CreatedUtc: new Date().toISOString()
-                    });
-                    cfg.Delimiters = el('amDelim').value;
-                    el('amTag').value = '';
-                    el('amName').value = '';
-                    save('\u2714 Mapping "' + tag + '" created and saved.');
-                });
+    <h3>Store</h3>
+    <div class="am-card">
+      <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
+      <div class="am-kv"><span>Schema version</span><span id="kvSchema">0.2</span></div>
+      <div class="am-kv"><span>Mappings</span><span id="kvMappingCount">—</span></div>
+    </div>
 
-                el('amTag').addEventListener('input', function () {
-                    var tag = el('amTag').value.trim();
-                    if (!tag) { el('amStatus').innerHTML = ''; return; }
-                    if (exists(tag)) { setStatus('Mapping name ' + tag + ' already exists', '#e74c3c'); }
-                    else { setStatus('Mapping Available \u2714', '#2ecc71'); }
-                });
+    <h3>Tag delimiters</h3>
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Characters that split a multi-value tag into separate values.">?</span>
+        Delimiters
+      </div>
+      <input id="delimiters" class="emby-input" type="text" />
+      <div class="am-hint">Default: / | ; :</div>
+    </div>
+    <div class="am-actions">
+      <button id="btnSaveAdvanced" class="emby-button raised button-submit">Save Settings</button>
+    </div>
+    <div id="advancedStatus" class="am-status"></div>
+  </div>
 
-                el('amBulkBtn').addEventListener('click', function () {
-                    var names = (el('amBulk').value || '').split(',')
-                        .map(function (s) { return s.trim(); })
-                        .filter(function (s) { return s; });
-                    var added = 0;
-                    names.forEach(function (n) {
-                        if (exists(n)) { return; }
-                        mappings().push({
-                            Id: guid(), SourceTag: n, DisplayName: n,
-                            Hierarchy: 'songs_albums', CreatedUtc: new Date().toISOString()
-                        });
-                        added++;
-                    });
-                    el('amBulk').value = '';
-                    save('\u2714 ' + added + ' mapping(s) created and saved.');
-                });
-
-                el('amDelSel').addEventListener('click', function () {
-                    var ids = Array.prototype.map.call(
-                        document.querySelectorAll('.am-sel:checked'),
-                        function (c) { return c.dataset.id; });
-                    if (!ids.length) { return; }
-                    cfg.Mappings = mappings().filter(function (m) {
-                        return ids.indexOf(String(p(m, 'Id'))) < 0;
-                    });
-                    save('\u2714 Deleted ' + ids.length + ' mapping(s).');
-                });
-
-                el('amDelAll').addEventListener('click', function () {
-                    if (!confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
-                    cfg.Mappings = [];
-                    save('\u2714 All mappings deleted.');
-                });
-
-                el('amDelim').addEventListener('change', function () {
-                    cfg.Delimiters = el('amDelim').value;
-                    save('\u2714 Delimiters saved.');
-                });
-
-                el('amReload').addEventListener('click', function (e) {
-                    e.preventDefault();
-                    load();
-                    setStatus('Reloaded from server.', '#93a1b1');
-                });
-
-                function runScan() {
-                    ApiClient.getScheduledTasks().then(function (tasks) {
-                        var t = tasks.filter(function (x) { return x.Key === 'AdvancedMetadataScan'; })[0];
-                        if (!t) { alert('Scan task not found. Restart Jellyfin.'); return; }
-                        ApiClient.startScheduledTask(t.Id).then(function () {
-                            el('amScanState').textContent = 'Scan started at ' + new Date().toLocaleTimeString();
-                        });
-                    });
-                }
-
-                el('amQuick').addEventListener('click', runScan);
-                el('amFull').addEventListener('click', function () {
-                    if (confirm('WARNING: Running a full scan will take significantly longer and may impact the performance of your environment? Do you want to continue?')) { runScan(); }
-                });
-                el('amRebuild').addEventListener('click', function () { alert('Rebuild Store: later milestone.'); });
-            }
-
-            document.querySelector('#AdvancedMetadataConfigPage')
-                .addEventListener('pageshow', function () { load(); });
-
-            wire();
-        })();
-    </script>
 </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PLUGIN_ID = '7f3c1a9e-2b4d-4c8a-9e6f-1a2b3c4d5e6f';
+  var TASK_KEY = 'AdvancedMetadataScan';
+  var cfg = null;
+  var task = null;
+  var scanRunning = false;
+
+  var HIER = {
+    songs: 'Songs only',
+    songs_albums: 'Songs + Parent Albums',
+    albums: 'Parent Albums only',
+    songs_albums_artists: 'Songs + Albums + Artists'
+  };
+
+  function guid() {
+    var s = '';
+    for (var i = 0; i < 36; i++) {
+      if (i === 8 || i === 13 || i === 18 || i === 23) { s += '-'; continue; }
+      if (i === 14) { s += '4'; continue; }
+      var r = Math.floor(Math.random() * 16);
+      if (i === 19) { r = (r & 0x3) | 0x8; }
+      s += r.toString(16);
+    }
+    return s;
+  }
+
+  function getJson(path) { return ApiClient.getJSON(ApiClient.getUrl(path)); }
+
+  function postJson(path, body) {
+    return ApiClient.ajax({
+      url: ApiClient.getUrl(path),
+      type: 'POST',
+      data: JSON.stringify(body),
+      contentType: 'application/json'
+    });
+  }
+
+  function postBare(path) { return ApiClient.ajax({ url: ApiClient.getUrl(path), type: 'POST' }); }
+
+  function $(id) { return document.getElementById(id); }
+
+  function setStatus(id, kind, msg) {
+    var el = $(id);
+    el.className = 'am-status show ' + kind;
+    el.textContent = msg;
+  }
+
+  function clearStatus(id) { $(id).className = 'am-status'; }
+
+  function fmt(iso) {
+    if (!iso) { return '—'; }
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  }
+
+  // ---------- tabs ----------
+  Array.prototype.forEach.call(document.querySelectorAll('.am-tab'), function (btn) {
+    btn.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.am-tab'), function (b) {
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
+        p.classList.toggle('active', p.getAttribute('data-panel') === btn.getAttribute('data-tab'));
+      });
+      if (btn.getAttribute('data-tab') === 'scan') { refreshTask(); }
+    });
+  });
+
+  // ---------- create ----------
+  function duplicate(tag) {
+    return (cfg.Mappings || []).some(function (m) {
+      return (m.SourceTag || '').toUpperCase() === tag.toUpperCase();
+    });
+  }
+
+  $('newTag').addEventListener('input', function () {
+    var tag = this.value.trim();
+    if (!tag) { clearStatus('createStatus'); return; }
+    if (duplicate(tag)) {
+      setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.');
+    } else {
+      setStatus('createStatus', 'ok', 'Mapping Available');
+    }
+  });
+
+  $('btnCreate').addEventListener('click', function () {
+    var tag = $('newTag').value.trim();
+    var display = $('newDisplay').value.trim();
+    var hier = $('newHierarchy').value;
+
+    if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
+    if (duplicate(tag)) { setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.'); return; }
+
+    cfg.Mappings = cfg.Mappings || [];
+    cfg.Mappings.push({
+      Id: guid(),
+      SourceTag: tag.toUpperCase(),
+      DisplayName: display || tag.toUpperCase(),
+      Hierarchy: hier,
+      CreatedUtc: new Date().toISOString()
+    });
+
+    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      .then(function () {
+        setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
+        $('newTag').value = '';
+        $('newDisplay').value = '';
+        renderManage();
+      })
+      .catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e); });
+  });
+
+  $('btnBulk').addEventListener('click', function () {
+    var raw = $('bulkTags').value;
+    var hier = $('bulkHierarchy').value;
+    var tags = raw.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+
+    if (!tags.length) { setStatus('bulkStatus', 'err', 'Enter at least one tag name.'); return; }
+
+    var clash = tags.filter(duplicate);
+    var warn = clash.length
+      ? 'WARNING: The following already exist and will be skipped: ' + clash.join(', ') + '. Continue? '
+      : '';
+    if (clash.length && !window.confirm(warn + 'Create ' + (tags.length - clash.length) + ' mapping(s)?')) { return; }
+
+    cfg.Mappings = cfg.Mappings || [];
+    var added = 0;
+    tags.forEach(function (t) {
+      if (duplicate(t)) { return; }
+      cfg.Mappings.push({
+        Id: guid(),
+        SourceTag: t.toUpperCase(),
+        DisplayName: t.toUpperCase(),
+        Hierarchy: hier,
+        CreatedUtc: new Date().toISOString()
+      });
+      added++;
+    });
+
+    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      .then(function () {
+        setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
+        $('bulkTags').value = '';
+        renderManage();
+      })
+      .catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e); });
+  });
+
+  // ---------- manage ----------
+  function renderManage() {
+    var body = $('manageRows');
+    body.innerHTML = '';
+    var list = cfg.Mappings || [];
+    $('manageEmpty').style.display = list.length ? 'none' : 'block';
+    $('kvMappingCount').textContent = list.length;
+
+    list.forEach(function (m) {
+      var tr = document.createElement('tr');
+
+      var tdTag = document.createElement('td');
+      tdTag.className = 'am-mono';
+      tdTag.textContent = m.SourceTag;
+      tdTag.title = m.SourceTag;
+      tr.appendChild(tdTag);
+
+      var tdName = document.createElement('td');
+      tdName.textContent = m.DisplayName;
+      tdName.title = m.DisplayName;
+      tr.appendChild(tdName);
+
+      var tdHier = document.createElement('td');
+      tdHier.textContent = HIER[m.Hierarchy] || m.Hierarchy;
+      tr.appendChild(tdHier);
+
+      var tdCreated = document.createElement('td');
+      tdCreated.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
+      tr.appendChild(tdCreated);
+
+      var tdAct = document.createElement('td');
+      var del = document.createElement('button');
+      del.className = 'am-link am-link-danger';
+      del.textContent = 'Delete';
+      del.addEventListener('click', function () {
+        if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
+        cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
+        postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+          .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
+          .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e); });
+      });
+      tdAct.appendChild(del);
+      tr.appendChild(tdAct);
+
+      body.appendChild(tr);
+    });
+  }
+
+  $('btnDeleteAll').addEventListener('click', function () {
+    if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
+    if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
+    cfg.Mappings = [];
+    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
+      .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e); });
+  });
+
+  $('btnRebuild').addEventListener('click', function () {
+    if (!window.confirm('Rebuild the index from scratch? This clears all indexed values; you will need to run a scan afterwards.')) { return; }
+    setStatus('manageStatus', 'info', 'Rebuild is not wired up yet — coming in the next release.');
+  });
+
+  // ---------- scan ----------
+  function renderScanState() {
+    if (!task) {
+      $('scanText').textContent = 'Scheduled task not found. Try restarting Jellyfin.';
+      $('btnScan').disabled = true;
+      return;
+    }
+
+    var state = task.State || 'Idle';
+    var running = state === 'Running' || state === 'Cancelling';
+    scanRunning = running;
+
+    var pct = task.CurrentProgressPercentage;
+    $('scanBar').style.width = (pct == null ? 0 : Math.max(0, Math.min(100, pct))) + '%';
+
+    if (running) {
+      var total = cfg.LastScanTotal || 0;
+      var done = cfg.LastScanItems || 0;
+      $('scanText').textContent = 'Scanning… ' + done + (total ? ' / ' + total : '') +
+        ' tracks' + (pct == null ? '' : ' — ' + Math.round(pct) + '%');
+    } else {
+      var last = task.LastExecutionResult;
+      if (last && last.Status) {
+        var when = last.EndTimeUtc ? new Date(last.EndTimeUtc).toLocaleString() : '';
+        $('scanText').textContent = 'Last run: ' + last.Status + (when ? ' at ' + when : '') +
+          (last.ErrorMessage ? ' — ' + last.ErrorMessage : '');
+      } else {
+        $('scanText').textContent = 'No scan has been run from Jellyfin yet.';
+      }
+    }
+
+    $('btnScan').disabled = running;
+    $('btnCancel').disabled = !running;
+    $('btnCreate').disabled = running;
+    $('btnBulk').disabled = running;
+  }
+
+  function renderScanSummary() {
+    $('kvSummary').textContent = cfg.LastScanSummary || 'Never scanned.';
+    $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems;
+    $('kvValues').textContent = cfg.LastScanValues == null ? '—' : cfg.LastScanValues;
+    $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors;
+    $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc);
+    $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc);
+    $('kvStorePath').textContent = cfg.StorePath || '(set on first run)';
+  }
+
+  function refreshTask() {
+    getJson('ScheduledTasks').then(function (tasks) {
+      task = (tasks || []).filter(function (t) { return t.Key === TASK_KEY; })[0] || null;
+      renderScanState();
+    }).catch(function () { /* ignore */ });
+  }
+
+  $('btnScan').addEventListener('click', function () {
+    if (!task) { return; }
+    if ($('chkFull').checked &&
+        !window.confirm('WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) {
+      return;
+    }
+    cfg.FullRescanRequested = $('chkFull').checked;
+    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      .then(function () { return postBare('ScheduledTasks/Running/' + task.Id); })
+      .then(function () {
+        setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
+        setTimeout(refreshTask, 700);
+      })
+      .catch(function (e) { setStatus('scanStatus', 'err', 'Could not start scan: ' + e); });
+  });
+
+  $('btnCancel').addEventListener('click', function () {
+    if (!task) { return; }
+    postBare('ScheduledTasks/Running/' + task.Id).then(function () { setTimeout(refreshTask, 500); });
+  });
+
+  // ---------- advanced ----------
+  $('btnSaveAdvanced').addEventListener('click', function () {
+    cfg.Delimiters = $('delimiters').value;
+    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      .then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
+      .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e); });
+  });
+
+  // ---------- boot ----------
+  function reloadConfig() {
+    return getJson('Plugins/' + PLUGIN_ID + '/Configuration').then(function (c) {
+      cfg = c || {};
+      cfg.Mappings = cfg.Mappings || [];
+      $('delimiters').value = cfg.Delimiters || '/|;:';
+      renderManage();
+      renderScanSummary();
+    });
+  }
+
+  reloadConfig().then(function () {
+    refreshTask();
+    setInterval(function () {
+      refreshTask();
+      if (scanRunning) {
+        reloadConfig().then(function () { renderScanState(); });
+      }
+    }, 2500);
+  }).catch(function (e) {
+    $('scanText').textContent = 'Could not load configuration: ' + e;
+  });
+})();
+</script>
 </body>
 </html>
