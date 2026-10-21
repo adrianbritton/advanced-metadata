@@ -195,17 +195,31 @@
             }
 
             function save(okMsg) {
-                return ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg).then(function () {
-                    return ApiClient.getPluginConfiguration(PLUGIN_ID);
-                }).then(function (fresh) {
-                    cfg = fresh;
-                    if (!cfg.mappings) { cfg.mappings = []; }
-                    render();
-                    if (okMsg) { setStatus(okMsg, '#2ecc71'); }
-                }).catch(function (e) {
-                    render();
-                    setStatus('SAVE FAILED: ' + e, '#e74c3c');
-                });
+                setStatus('Saving...', '#93a1b1');
+                console.log('AM save: posting config', cfg);
+                try {
+                    ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg)
+                        .then(function () {
+                            setStatus('Saved. Re-reading from server...', '#93a1b1');
+                            console.log('AM save: post ok, re-reading');
+                            return ApiClient.getPluginConfiguration(PLUGIN_ID);
+                        })
+                        .then(function (fresh) {
+                            cfg = fresh;
+                            if (!cfg.mappings) { cfg.mappings = []; }
+                            render();
+                            console.log('AM save: re-read returned', cfg.mappings.length, 'mappings');
+                            setStatus(okMsg || 'Saved.', '#2ecc71');
+                        })
+                        .catch(function (e) {
+                            var msg = (e && e.message) ? e.message : String(e);
+                            console.log('AM save: FAILED', e);
+                            setStatus('SAVE FAILED: ' + msg, '#e74c3c');
+                        });
+                } catch (e) {
+                    console.log('AM save: THREW', e);
+                    setStatus('SAVE THREW: ' + e, '#e74c3c');
+                }
             }
 
             function render() {
