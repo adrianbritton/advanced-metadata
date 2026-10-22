@@ -265,12 +265,13 @@
 (function () {
   'use strict';
 
-  var PLUGIN_ID = '7f3c1a9e-2b4d-4c8a-9e6f-1a2b3c4d5e6f';
+  var PLUGIN_NAME = 'Advanced Metadata';
   var TASK_KEY = 'AdvancedMetadataScan';
   var cfg = null;
   var task = null;
   var scanRunning = false;
   var tokenInfo = { value: null, source: null, done: false };
+  var idCache = null;
 
   var HIER = {
     songs: 'Songs only',
@@ -282,7 +283,7 @@
   function $(id) { return document.getElementById(id); }
 
   /* ------------------------------------------------------------------ *
-   * Auth: find an access token, from any source available to us.
+   * Auth
    * ------------------------------------------------------------------ */
 
   function client() {
@@ -304,30 +305,26 @@
           if (o.Servers[i] && o.Servers[i].AccessToken) { return o.Servers[i].AccessToken; }
         }
       }
-    } catch (e) { /* not JSON — fall through to regex */ }
+    } catch (e) { /* not JSON */ }
     var m = String(raw).match(/"AccessToken"\s*:\s*"([^"]+)"/);
     return m ? m[1] : null;
   }
 
   function scanStore(store) {
     if (!store) { return null; }
-
     try {
       var t = extractToken(store.getItem('jellyfin_credentials'));
       if (t) { return t; }
     } catch (e) { /* ignore */ }
-
     try {
       for (var i = 0; i < store.length; i++) {
-        var name = store.key(i);
-        var v = store.getItem(name);
+        var v = store.getItem(store.key(i));
         if (v && v.indexOf('AccessToken') > -1) {
           var t2 = extractToken(v);
           if (t2) { return t2; }
         }
       }
     } catch (e) { /* ignore */ }
-
     return null;
   }
 
@@ -347,7 +344,6 @@
       ['localStorage', function () { return window.localStorage; }],
       ['sessionStorage', function () { return window.sessionStorage; }]
     ];
-
     for (var i = 0; i < sources.length; i++) {
       var found;
       try { found = scanStore(sources[i][1]()); } catch (e) { found = null; }
@@ -357,7 +353,6 @@
         return found;
       }
     }
-
     return null;
   }
 
@@ -382,7 +377,7 @@
     if (t) {
       h['X-Emby-Token'] = t;
       h['Authorization'] = 'MediaBrowser Token="' + t
-        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.2"';
+        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.3"';
     }
     if (json) { h['Content-Type'] = 'application/json'; }
     return h;
@@ -410,6 +405,28 @@
     var opts = { method: 'POST', headers: headers(body !== undefined), credentials: 'same-origin' };
     if (body !== undefined) { opts.body = JSON.stringify(body); }
     return apiFetch(path, opts, false).then(function (r) { return r.text(); });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Find our own plugin, so the ID can never go stale
+   * ------------------------------------------------------------------ */
+
+  function pluginId() {
+    if (idCache) { return Promise.resolve(idCache); }
+    return apiGet('Plugins').then(function (list) {
+      var hit = (list || []).filter(function (p) { return p.Name === PLUGIN_NAME; })[0];
+      if (!hit) { throw new Error('Plugin "' + PLUGIN_NAME + '" not found in the plugin list.'); }
+      idCache = hit.Id;
+      return idCache;
+    });
+  }
+
+  function getConfig() {
+    return pluginId().then(function (id) { return apiGet('Plugins/' + id + '/Configuration'); });
+  }
+
+  function saveConfig(c) {
+    return pluginId().then(function (id) { return apiPost('Plugins/' + id + '/Configuration', c); });
   }
 
   /* ------------------------------------------------------------------ *
@@ -447,10 +464,10 @@
     var el = $('amDiag');
     if (!el) { return; }
     var t = findToken();
-    el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source + ' (' + t.length + ' chars)'
-                                       : 'NOT FOUND')
+    el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source + ' (' + t.length + ' chars)' : 'NOT FOUND')
       + ' &nbsp;·&nbsp; <b>base:</b> "' + (basePath() || '/') + '"'
       + ' &nbsp;·&nbsp; <b>ApiClient:</b> ' + (client() ? 'present' : 'absent')
+      + ' &nbsp;·&nbsp; <b>pluginId:</b> ' + (idCache ? idCache.substring(0, 8) + '…' : 'resolving')
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
   }
 
@@ -511,7 +528,7 @@
         CreatedUtc: new Date().toISOString()
       });
 
-      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      saveConfig(cfg)
         .then(function () {
           setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
           $('newTag').value = '';
@@ -546,7 +563,7 @@
         added++;
       });
 
-      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      saveConfig(cfg)
         .then(function () {
           setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
           $('bulkTags').value = '';
@@ -598,7 +615,7 @@
         if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName
             + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
         cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
-        apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        saveConfig(cfg)
           .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
           .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
       });
@@ -614,7 +631,7 @@
       if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
       if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
       cfg.Mappings = [];
-      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      saveConfig(cfg)
         .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
         .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
@@ -690,7 +707,7 @@
         return;
       }
       cfg.FullRescanRequested = $('chkFull').checked;
-      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
         .then(function () {
           setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
@@ -712,7 +729,7 @@
   function wireAdvanced() {
     $('btnSaveAdvanced').addEventListener('click', function () {
       cfg.Delimiters = $('delimiters').value;
-      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+      saveConfig(cfg)
         .then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
         .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
@@ -723,7 +740,7 @@
    * ------------------------------------------------------------------ */
 
   function loadConfig() {
-    return apiGet('Plugins/' + PLUGIN_ID + '/Configuration').then(function (c) {
+    return getConfig().then(function (c) {
       cfg = c || {};
       cfg.Mappings = cfg.Mappings || [];
       if ($('delimiters')) { $('delimiters').value = cfg.Delimiters || '/|;:'; }
