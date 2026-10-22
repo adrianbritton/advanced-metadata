@@ -2,79 +2,115 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Advanced Metadata</title>
 <style>
-  #AdvancedMetadataConfigPage { padding: 1.2em 1.4em 3em; max-width: 1100px; }
-  .am-tabs { display:flex; gap:.3em; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,.14); margin-bottom:1.4em; }
-  .am-tab { background:transparent; border:0; border-bottom:2px solid transparent; color:inherit; opacity:.68;
-            padding:.65em 1.15em; font-size:1em; cursor:pointer; border-radius:4px 4px 0 0; }
-  .am-tab:hover { opacity:1; background:rgba(255,255,255,.05); }
-  .am-tab[aria-selected="true"] { opacity:1; border-bottom-color:#52b54b; font-weight:600; }
-  .am-panel { display:none; }
-  .am-panel.active { display:block; }
+  html, body { margin: 0; padding: 0; background: #0e1116; color: #e6edf3;
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+               font-size: 15px; line-height: 1.5; }
+  #AdvancedMetadataConfigPage { background: #0e1116; color: #e6edf3; padding: 20px 24px 60px; max-width: 1080px; min-height: 60vh; }
 
-  .am-field { margin-bottom:1.1em; max-width:560px; }
-  .am-label { display:flex; align-items:center; gap:.45em; font-weight:600; margin-bottom:.4em; }
-  .am-label .emby-input, .am-label .emby-select { font-weight:400; }
-  .am-help { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; flex:0 0 17px;
-             border-radius:50%; background:rgba(255,255,255,.16); font-size:11px; font-weight:700; cursor:help; }
-  .am-hint { font-size:.82em; opacity:.62; margin-top:.35em; }
+  #AdvancedMetadataConfigPage h2 { font-size: 1.35em; margin: 0 0 .6em; }
+  #AdvancedMetadataConfigPage h3 { font-size: 1.1em; margin: 1.6em 0 .6em; }
+  #AdvancedMetadataConfigPage p  { color: #9aa4b2; }
 
-  .am-actions { display:flex; gap:.6em; flex-wrap:wrap; margin-top:1.3em; }
-  .am-actions .emby-button { min-width:170px; margin:0; }
+  .am-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid #2a313c; margin-bottom: 22px; }
+  .am-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; color: #9aa4b2;
+            padding: 10px 18px; font-size: 15px; font-family: inherit; cursor: pointer; border-radius: 6px 6px 0 0; }
+  .am-tab:hover { color: #e6edf3; background: #161b22; }
+  .am-tab[aria-selected="true"] { color: #ffffff; border-bottom-color: #52b54b; font-weight: 600; background: #161b22; }
 
-  .am-status { display:none; margin-top:.9em; max-width:620px; padding:.72em .95em; border-radius:4px;
-               border-left:4px solid #888; font-size:.94em; line-height:1.45; }
-  .am-status.show { display:block; }
-  .am-status.ok   { background:rgba(82,181,75,.15);  border-left-color:#52b54b; }
-  .am-status.err  { background:rgba(224,86,86,.15);  border-left-color:#e05656; }
-  .am-status.warn { background:rgba(226,160,63,.15); border-left-color:#e2a03f; }
-  .am-status.info { background:rgba(96,165,250,.14); border-left-color:#60a5fa; }
+  .am-panel { display: none; }
+  .am-panel.active { display: block; }
 
-  .am-table { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:.6em; }
-  .am-table th { text-align:left; font-size:.82em; text-transform:uppercase; letter-spacing:.04em; opacity:.65;
-                 padding:.55em .6em; border-bottom:1px solid rgba(255,255,255,.14); }
-  .am-table td { padding:.62em .6em; border-bottom:1px solid rgba(255,255,255,.07); vertical-align:middle;
-                 overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .am-table .am-mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.9em; }
-  .am-link { background:none; border:0; padding:0; color:#6fb0ff; cursor:pointer; font-size:.9em; text-decoration:none; }
-  .am-link:hover { text-decoration:underline; }
-  .am-link-danger { color:#ff8080; }
-  .am-empty { opacity:.6; padding:1.4em .2em; font-style:italic; }
+  .am-field { margin-bottom: 18px; max-width: 560px; }
+  .am-label { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 7px; color: #e6edf3; }
+  .am-help { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px;
+             flex: 0 0 17px; border-radius: 50%; background: #2a313c; color: #cfd6df;
+             font-size: 11px; font-weight: 700; cursor: help; }
+  .am-hint { font-size: .84em; color: #8b949e; margin-top: 6px; }
 
-  .am-progresswrap { margin-top:1em; max-width:620px; }
-  .am-progressbar { height:10px; border-radius:6px; background:rgba(255,255,255,.13); overflow:hidden; }
-  .am-progressbar > div { height:100%; width:0; background:#52b54b; transition:width .4s ease; }
-  .am-progresstext { margin-top:.5em; font-size:.9em; opacity:.85; }
+  #AdvancedMetadataConfigPage input[type="text"],
+  #AdvancedMetadataConfigPage select {
+    width: 100%; box-sizing: border-box; background: #0a0d12; color: #e6edf3;
+    border: 1px solid #30363d; border-radius: 6px; padding: 10px 12px;
+    font-size: 15px; font-family: inherit; outline: none;
+  }
+  #AdvancedMetadataConfigPage input[type="text"]:focus,
+  #AdvancedMetadataConfigPage select:focus { border-color: #52b54b; box-shadow: 0 0 0 3px rgba(82,181,75,.18); }
+  #AdvancedMetadataConfigPage select { appearance: none; -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, #9aa4b2 50%), linear-gradient(135deg, #9aa4b2 50%, transparent 50%);
+    background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%;
+    background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right: 38px; }
 
-  .am-card { border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:1em 1.1em; max-width:620px; margin-bottom:1.1em; }
-  .am-kv { display:flex; justify-content:space-between; gap:1em; padding:.4em 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:.92em; }
-  .am-kv:last-child { border-bottom:0; }
-  .am-kv span:first-child { opacity:.68; }
-  .am-kv span:last-child { font-family:ui-monospace,Menlo,Consolas,monospace; text-align:right; word-break:break-all; }
-  .am-sep { height:1px; background:rgba(255,255,255,.12); margin:2em 0 1.6em; max-width:620px; }
+  .am-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+  .am-btn { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
+            padding: 10px 20px; font-size: 15px; font-family: inherit; font-weight: 600;
+            cursor: pointer; min-width: 170px; }
+  .am-btn:hover { background: #2d333b; }
+  .am-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .am-btn-primary { background: #52b54b; border-color: #52b54b; color: #08130a; }
+  .am-btn-primary:hover { background: #5fc457; }
+
+  .am-status { display: none; margin-top: 14px; max-width: 620px; padding: 12px 15px;
+               border-radius: 6px; border-left: 4px solid #888; font-size: .94em; }
+  .am-status.show { display: block; }
+  .am-status.ok   { background: rgba(82,181,75,.16);  border-left-color: #52b54b; color: #b9e7b3; }
+  .am-status.err  { background: rgba(229,83,75,.16);  border-left-color: #e5534b; color: #ffb8b3; }
+  .am-status.warn { background: rgba(226,160,63,.16); border-left-color: #e2a03f; color: #f0cf94; }
+  .am-status.info { background: rgba(88,166,255,.14); border-left-color: #58a6ff; color: #b6d8ff; }
+
+  .am-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; }
+  .am-table th { text-align: left; font-size: .78em; text-transform: uppercase; letter-spacing: .05em;
+                 color: #8b949e; padding: 9px 10px; border-bottom: 1px solid #30363d; }
+  .am-table td { padding: 11px 10px; border-bottom: 1px solid #21262d; vertical-align: middle;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .am-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; color: #c9d1d9; }
+  .am-link { background: none; border: 0; padding: 0; color: #58a6ff; cursor: pointer;
+             font-size: .9em; font-family: inherit; }
+  .am-link:hover { text-decoration: underline; }
+  .am-link-danger { color: #ff8580; }
+  .am-empty { color: #8b949e; font-style: italic; padding: 18px 2px; }
+
+  .am-card { border: 1px solid #30363d; background: #131820; border-radius: 8px;
+             padding: 14px 16px; max-width: 620px; margin-bottom: 16px; }
+  .am-kv { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0;
+           border-bottom: 1px solid #21262d; font-size: .92em; }
+  .am-kv:last-child { border-bottom: 0; }
+  .am-kv span:first-child { color: #8b949e; }
+  .am-kv span:last-child { font-family: ui-monospace, Menlo, Consolas, monospace;
+                           text-align: right; word-break: break-all; }
+  .am-progressbar { height: 10px; border-radius: 6px; background: #21262d; overflow: hidden; margin-top: 16px; }
+  .am-progressbar > div { height: 100%; width: 0; background: #52b54b; transition: width .4s ease; }
+  .am-progresstext { margin-top: 9px; font-size: .9em; color: #9aa4b2; }
+  .am-sep { height: 1px; background: #21262d; margin: 32px 0 24px; max-width: 620px; }
+  .am-checkrow { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+  .am-checkrow input { margin-top: 3px; }
+  #amBoot { color: #8b949e; padding: 12px 0; }
 </style>
 </head>
 <body>
 <div id="AdvancedMetadataConfigPage">
 
   <div class="am-tabs" role="tablist">
-    <button class="am-tab" role="tab" data-tab="create"  aria-selected="true">Create Mapping</button>
-    <button class="am-tab" role="tab" data-tab="manage"  aria-selected="false">Manage Mappings</button>
-    <button class="am-tab" role="tab" data-tab="scan"    aria-selected="false">Scan Mappings</button>
+    <button class="am-tab" role="tab" data-tab="create"   aria-selected="true">Create Mapping</button>
+    <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false">Manage Mappings</button>
+    <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false">Scan Mappings</button>
     <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false">Advanced</button>
   </div>
 
+  <div id="amBoot">Loading…</div>
+
   <!-- ============ CREATE ============ -->
   <div class="am-panel active" data-panel="create">
-    <h2 style="margin-top:0">Create Single Mapping</h2>
+    <h2>Create Single Mapping</h2>
 
     <div class="am-field">
       <div class="am-label">
         <span class="am-help" title="This must match the ID3 tag EXACTLY as written in your files.">?</span>
         Enter tag name for mapping
       </div>
-      <input id="newTag" class="emby-input" type="text" placeholder="e.g. LABEL" autocomplete="off" />
+      <input id="newTag" type="text" placeholder="e.g. LABEL" autocomplete="off" />
       <div class="am-hint">Case-insensitive. Must match the tag exactly as written in your files.</div>
     </div>
 
@@ -83,7 +119,7 @@
         <span class="am-help" title="Enter the desired display name, such as Record Label (instead of LABEL). If blank, the tag name is used.">?</span>
         Preferred display name (optional)
       </div>
-      <input id="newDisplay" class="emby-input" type="text" placeholder="e.g. Record Label" autocomplete="off" />
+      <input id="newDisplay" type="text" placeholder="e.g. Record Label" autocomplete="off" />
     </div>
 
     <div class="am-field">
@@ -91,7 +127,7 @@
         <span class="am-help" title="Select if the scan should index Songs only, or also populate Albums and/or Artists.">?</span>
         Where should this data appear?
       </div>
-      <select id="newHierarchy" class="emby-select">
+      <select id="newHierarchy">
         <option value="songs">Songs only</option>
         <option value="songs_albums" selected>Songs + Parent Albums</option>
         <option value="albums">Parent Albums only</option>
@@ -100,7 +136,7 @@
     </div>
 
     <div class="am-actions">
-      <button id="btnCreate" class="emby-button raised button-submit">Create Mapping</button>
+      <button id="btnCreate" class="am-btn am-btn-primary">Create Mapping</button>
     </div>
     <div id="createStatus" class="am-status"></div>
 
@@ -112,12 +148,12 @@
         <span class="am-help" title="Comma-separated list of tag names for bulk mapping, e.g. COMPOSER, LABEL, STYLE.">?</span>
         Comma-separated list of tag names
       </div>
-      <input id="bulkTags" class="emby-input" type="text" placeholder="e.g. CATALOGNUMBER, OWNER, OWNEDMEDIA" autocomplete="off" />
+      <input id="bulkTags" type="text" placeholder="e.g. CATALOGNUMBER, OWNER, OWNEDMEDIA" autocomplete="off" />
       <div class="am-hint">Display name defaults to the tag name. All entries use the hierarchy below.</div>
     </div>
     <div class="am-field">
       <div class="am-label">Hierarchy for bulk entries</div>
-      <select id="bulkHierarchy" class="emby-select">
+      <select id="bulkHierarchy">
         <option value="songs">Songs only</option>
         <option value="songs_albums" selected>Songs + Parent Albums</option>
         <option value="albums">Parent Albums only</option>
@@ -125,14 +161,14 @@
       </select>
     </div>
     <div class="am-actions">
-      <button id="btnBulk" class="emby-button raised button-submit">Create Bulk Mappings</button>
+      <button id="btnBulk" class="am-btn am-btn-primary">Create Bulk Mappings</button>
     </div>
     <div id="bulkStatus" class="am-status"></div>
   </div>
 
   <!-- ============ MANAGE ============ -->
   <div class="am-panel" data-panel="manage">
-    <h2 style="margin-top:0">Manage Mappings</h2>
+    <h2>Manage Mappings</h2>
     <table class="am-table">
       <thead>
         <tr>
@@ -147,24 +183,24 @@
     </table>
     <div id="manageEmpty" class="am-empty">No mappings yet. Create one on the Create Mapping tab.</div>
 
-    <div class="am-actions" style="margin-top:1.6em">
-      <button id="btnDeleteAll" class="emby-button raised">Delete All Mappings</button>
-      <button id="btnRebuild" class="emby-button raised">Rebuild Store</button>
+    <div class="am-actions" style="margin-top:26px">
+      <button id="btnDeleteAll" class="am-btn">Delete All Mappings</button>
+      <button id="btnRebuild" class="am-btn">Rebuild Store</button>
     </div>
     <div id="manageStatus" class="am-status"></div>
   </div>
 
   <!-- ============ SCAN ============ -->
   <div class="am-panel" data-panel="scan">
-    <h2 style="margin-top:0">Scan Mappings</h2>
-    <p style="max-width:620px; opacity:.85">
+    <h2>Scan Mappings</h2>
+    <p style="max-width:620px">
       The scan reads your mapped tags into the plugin's own index. Your audio files and Jellyfin's
       database are never modified.
     </p>
 
     <div class="am-card">
-      <label style="display:flex; gap:.6em; align-items:flex-start; cursor:pointer">
-        <input id="chkFull" type="checkbox" style="margin-top:.25em" />
+      <label class="am-checkrow">
+        <input id="chkFull" type="checkbox" />
         <span>
           <strong>Full rescan</strong>
           <div class="am-hint">Ignore the incremental gate and re-read every track. Takes significantly longer.</div>
@@ -173,20 +209,18 @@
     </div>
 
     <div class="am-actions">
-      <button id="btnScan" class="emby-button raised button-submit">Start Scan</button>
-      <button id="btnCancel" class="emby-button raised">Stop Scan</button>
+      <button id="btnScan" class="am-btn am-btn-primary">Start Scan</button>
+      <button id="btnCancel" class="am-btn">Stop Scan</button>
     </div>
     <div id="scanStatus" class="am-status"></div>
 
-    <div class="am-progresswrap">
-      <div class="am-progressbar"><div id="scanBar"></div></div>
-      <div id="scanText" class="am-progresstext">Checking scan state…</div>
-    </div>
+    <div class="am-progressbar"><div id="scanBar"></div></div>
+    <div id="scanText" class="am-progresstext">Checking scan state…</div>
 
     <div class="am-sep"></div>
 
     <h3>Last scan</h3>
-    <div class="am-card" id="scanSummaryCard">
+    <div class="am-card">
       <div class="am-kv"><span>Summary</span><span id="kvSummary">—</span></div>
       <div class="am-kv"><span>Tracks read</span><span id="kvItems">—</span></div>
       <div class="am-kv"><span>Values indexed</span><span id="kvValues">—</span></div>
@@ -198,7 +232,7 @@
 
   <!-- ============ ADVANCED ============ -->
   <div class="am-panel" data-panel="advanced">
-    <h2 style="margin-top:0">Advanced</h2>
+    <h2>Advanced</h2>
 
     <h3>Store</h3>
     <div class="am-card">
@@ -213,11 +247,11 @@
         <span class="am-help" title="Characters that split a multi-value tag into separate values.">?</span>
         Delimiters
       </div>
-      <input id="delimiters" class="emby-input" type="text" />
+      <input id="delimiters" type="text" />
       <div class="am-hint">Default: / | ; :</div>
     </div>
     <div class="am-actions">
-      <button id="btnSaveAdvanced" class="emby-button raised button-submit">Save Settings</button>
+      <button id="btnSaveAdvanced" class="am-btn am-btn-primary">Save Settings</button>
     </div>
     <div id="advancedStatus" class="am-status"></div>
   </div>
@@ -241,6 +275,68 @@
     songs_albums_artists: 'Songs + Albums + Artists'
   };
 
+  function $(id) { return document.getElementById(id); }
+
+  // ---- talking to Jellyfin, with or without the dashboard's ApiClient ----
+  function client() {
+    if (window.ApiClient && window.ApiClient.getUrl) { return window.ApiClient; }
+    try {
+      if (window.parent && window.parent !== window && window.parent.ApiClient
+          && window.parent.ApiClient.getUrl) { return window.parent.ApiClient; }
+    } catch (e) { /* cross-origin guard */ }
+    return null;
+  }
+
+  function basePath() {
+    var p = window.location.pathname || '/';
+    var i = p.indexOf('/web/');
+    return i > -1 ? p.substring(0, i) : '';
+  }
+
+  function apiUrl(path) {
+    var c = client();
+    if (c) { return c.getUrl(path); }
+    return basePath() + '/' + path;
+  }
+
+  function token() {
+    var c = client();
+    if (c && typeof c.accessToken === 'function') {
+      try { var t = c.accessToken(); if (t) { return t; } } catch (e) { /* ignore */ }
+    }
+    try {
+      var raw = window.localStorage.getItem('jellyfin_credentials');
+      if (!raw) { return null; }
+      var creds = JSON.parse(raw);
+      var s = creds && creds.Servers && creds.Servers[0];
+      return s && s.AccessToken ? s.AccessToken : null;
+    } catch (e) { return null; }
+  }
+
+  function headers(json) {
+    var h = { 'Accept': 'application/json', 'X-Emby-Token': token() || '' };
+    if (json) { h['Content-Type'] = 'application/json'; }
+    return h;
+  }
+
+  function apiGet(path) {
+    return fetch(apiUrl(path), { headers: headers(false), credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('HTTP ' + r.status + ' on ' + path); }
+        return r.json();
+      });
+  }
+
+  function apiPost(path, body) {
+    var opts = { method: 'POST', headers: headers(body !== undefined), credentials: 'same-origin' };
+    if (body !== undefined) { opts.body = JSON.stringify(body); }
+    return fetch(apiUrl(path), opts).then(function (r) {
+      if (!r.ok) { throw new Error('HTTP ' + r.status + ' on ' + path); }
+      return r.text();
+    });
+  }
+
+  // ---- helpers ----
   function guid() {
     var s = '';
     for (var i = 0; i < 36; i++) {
@@ -253,28 +349,14 @@
     return s;
   }
 
-  function getJson(path) { return ApiClient.getJSON(ApiClient.getUrl(path)); }
-
-  function postJson(path, body) {
-    return ApiClient.ajax({
-      url: ApiClient.getUrl(path),
-      type: 'POST',
-      data: JSON.stringify(body),
-      contentType: 'application/json'
-    });
-  }
-
-  function postBare(path) { return ApiClient.ajax({ url: ApiClient.getUrl(path), type: 'POST' }); }
-
-  function $(id) { return document.getElementById(id); }
-
   function setStatus(id, kind, msg) {
     var el = $(id);
+    if (!el) { return; }
     el.className = 'am-status show ' + kind;
     el.textContent = msg;
   }
 
-  function clearStatus(id) { $(id).className = 'am-status'; }
+  function clearStatus(id) { var el = $(id); if (el) { el.className = 'am-status'; } }
 
   function fmt(iso) {
     if (!iso) { return '—'; }
@@ -282,106 +364,113 @@
     return isNaN(d.getTime()) ? '—' : d.toLocaleString();
   }
 
-  // ---------- tabs ----------
-  Array.prototype.forEach.call(document.querySelectorAll('.am-tab'), function (btn) {
-    btn.addEventListener('click', function () {
-      Array.prototype.forEach.call(document.querySelectorAll('.am-tab'), function (b) {
-        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
-      });
-      Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
-        p.classList.toggle('active', p.getAttribute('data-panel') === btn.getAttribute('data-tab'));
-      });
-      if (btn.getAttribute('data-tab') === 'scan') { refreshTask(); }
-    });
-  });
+  function boot(msg) { var el = $('amBoot'); if (el) { el.textContent = msg; } }
 
-  // ---------- create ----------
+  // ---- tabs ----
+  function wireTabs() {
+    var tabs = document.querySelectorAll('.am-tab');
+    Array.prototype.forEach.call(tabs, function (btn) {
+      btn.addEventListener('click', function () {
+        Array.prototype.forEach.call(tabs, function (b) {
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
+          p.classList.toggle('active', p.getAttribute('data-panel') === btn.getAttribute('data-tab'));
+        });
+        if (btn.getAttribute('data-tab') === 'scan') { refreshTask(); }
+      });
+    });
+  }
+
+  // ---- create ----
   function duplicate(tag) {
     return (cfg.Mappings || []).some(function (m) {
       return (m.SourceTag || '').toUpperCase() === tag.toUpperCase();
     });
   }
 
-  $('newTag').addEventListener('input', function () {
-    var tag = this.value.trim();
-    if (!tag) { clearStatus('createStatus'); return; }
-    if (duplicate(tag)) {
-      setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.');
-    } else {
-      setStatus('createStatus', 'ok', 'Mapping Available');
-    }
-  });
-
-  $('btnCreate').addEventListener('click', function () {
-    var tag = $('newTag').value.trim();
-    var display = $('newDisplay').value.trim();
-    var hier = $('newHierarchy').value;
-
-    if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
-    if (duplicate(tag)) { setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.'); return; }
-
-    cfg.Mappings = cfg.Mappings || [];
-    cfg.Mappings.push({
-      Id: guid(),
-      SourceTag: tag.toUpperCase(),
-      DisplayName: display || tag.toUpperCase(),
-      Hierarchy: hier,
-      CreatedUtc: new Date().toISOString()
+  function wireCreate() {
+    var tagEl = $('newTag');
+    tagEl.addEventListener('input', function () {
+      var tag = this.value.trim();
+      if (!tag) { clearStatus('createStatus'); return; }
+      if (duplicate(tag)) {
+        setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.');
+      } else {
+        setStatus('createStatus', 'ok', 'Mapping Available');
+      }
     });
 
-    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      .then(function () {
-        setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
-        $('newTag').value = '';
-        $('newDisplay').value = '';
-        renderManage();
-      })
-      .catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e); });
-  });
+    $('btnCreate').addEventListener('click', function () {
+      var tag = $('newTag').value.trim();
+      var display = $('newDisplay').value.trim();
+      var hier = $('newHierarchy').value;
 
-  $('btnBulk').addEventListener('click', function () {
-    var raw = $('bulkTags').value;
-    var hier = $('bulkHierarchy').value;
-    var tags = raw.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+      if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
+      if (duplicate(tag)) { setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.'); return; }
 
-    if (!tags.length) { setStatus('bulkStatus', 'err', 'Enter at least one tag name.'); return; }
-
-    var clash = tags.filter(duplicate);
-    var warn = clash.length
-      ? 'WARNING: The following already exist and will be skipped: ' + clash.join(', ') + '. Continue? '
-      : '';
-    if (clash.length && !window.confirm(warn + 'Create ' + (tags.length - clash.length) + ' mapping(s)?')) { return; }
-
-    cfg.Mappings = cfg.Mappings || [];
-    var added = 0;
-    tags.forEach(function (t) {
-      if (duplicate(t)) { return; }
+      cfg.Mappings = cfg.Mappings || [];
       cfg.Mappings.push({
         Id: guid(),
-        SourceTag: t.toUpperCase(),
-        DisplayName: t.toUpperCase(),
+        SourceTag: tag.toUpperCase(),
+        DisplayName: display || tag.toUpperCase(),
         Hierarchy: hier,
         CreatedUtc: new Date().toISOString()
       });
-      added++;
+
+      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        .then(function () {
+          setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
+          $('newTag').value = '';
+          $('newDisplay').value = '';
+          renderManage();
+        })
+        .catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
-    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      .then(function () {
-        setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
-        $('bulkTags').value = '';
-        renderManage();
-      })
-      .catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e); });
-  });
+    $('btnBulk').addEventListener('click', function () {
+      var tags = $('bulkTags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+      var hier = $('bulkHierarchy').value;
 
-  // ---------- manage ----------
+      if (!tags.length) { setStatus('bulkStatus', 'err', 'Enter at least one tag name.'); return; }
+
+      var clash = tags.filter(duplicate);
+      if (clash.length && !window.confirm(
+          'WARNING: The following already exist and will be skipped: ' + clash.join(', ')
+          + '. Continue?')) { return; }
+
+      cfg.Mappings = cfg.Mappings || [];
+      var added = 0;
+      tags.forEach(function (t) {
+        if (duplicate(t)) { return; }
+        cfg.Mappings.push({
+          Id: guid(),
+          SourceTag: t.toUpperCase(),
+          DisplayName: t.toUpperCase(),
+          Hierarchy: hier,
+          CreatedUtc: new Date().toISOString()
+        });
+        added++;
+      });
+
+      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        .then(function () {
+          setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
+          $('bulkTags').value = '';
+          renderManage();
+        })
+        .catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e.message); });
+    });
+  }
+
+  // ---- manage ----
   function renderManage() {
     var body = $('manageRows');
+    if (!body) { return; }
     body.innerHTML = '';
     var list = cfg.Mappings || [];
     $('manageEmpty').style.display = list.length ? 'none' : 'block';
-    $('kvMappingCount').textContent = list.length;
+    if ($('kvMappingCount')) { $('kvMappingCount').textContent = list.length; }
 
     list.forEach(function (m) {
       var tr = document.createElement('tr');
@@ -410,11 +499,12 @@
       del.className = 'am-link am-link-danger';
       del.textContent = 'Delete';
       del.addEventListener('click', function () {
-        if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
+        if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName
+            + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
         cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
-        postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
           .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
-          .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e); });
+          .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
       });
       tdAct.appendChild(del);
       tr.appendChild(tdAct);
@@ -423,21 +513,23 @@
     });
   }
 
-  $('btnDeleteAll').addEventListener('click', function () {
-    if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
-    if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
-    cfg.Mappings = [];
-    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
-      .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e); });
-  });
+  function wireManage() {
+    $('btnDeleteAll').addEventListener('click', function () {
+      if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
+      if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
+      cfg.Mappings = [];
+      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
+        .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
+    });
 
-  $('btnRebuild').addEventListener('click', function () {
-    if (!window.confirm('Rebuild the index from scratch? This clears all indexed values; you will need to run a scan afterwards.')) { return; }
-    setStatus('manageStatus', 'info', 'Rebuild is not wired up yet — coming in the next release.');
-  });
+    $('btnRebuild').addEventListener('click', function () {
+      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values; you will need to run a scan afterwards.')) { return; }
+      setStatus('manageStatus', 'info', 'Rebuild is not wired up yet — coming in the next release.');
+    });
+  }
 
-  // ---------- scan ----------
+  // ---- scan ----
   function renderScanState() {
     if (!task) {
       $('scanText').textContent = 'Scheduled task not found. Try restarting Jellyfin.';
@@ -455,14 +547,14 @@
     if (running) {
       var total = cfg.LastScanTotal || 0;
       var done = cfg.LastScanItems || 0;
-      $('scanText').textContent = 'Scanning… ' + done + (total ? ' / ' + total : '') +
-        ' tracks' + (pct == null ? '' : ' — ' + Math.round(pct) + '%');
+      $('scanText').textContent = 'Scanning… ' + done + (total ? ' / ' + total : '') + ' tracks'
+        + (pct == null ? '' : ' — ' + Math.round(pct) + '%');
     } else {
       var last = task.LastExecutionResult;
       if (last && last.Status) {
         var when = last.EndTimeUtc ? new Date(last.EndTimeUtc).toLocaleString() : '';
-        $('scanText').textContent = 'Last run: ' + last.Status + (when ? ' at ' + when : '') +
-          (last.ErrorMessage ? ' — ' + last.ErrorMessage : '');
+        $('scanText').textContent = 'Last run: ' + last.Status + (when ? ' at ' + when : '')
+          + (last.ErrorMessage ? ' — ' + last.ErrorMessage : '');
       } else {
         $('scanText').textContent = 'No scan has been run from Jellyfin yet.';
       }
@@ -475,73 +567,101 @@
   }
 
   function renderScanSummary() {
-    $('kvSummary').textContent = cfg.LastScanSummary || 'Never scanned.';
-    $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems;
-    $('kvValues').textContent = cfg.LastScanValues == null ? '—' : cfg.LastScanValues;
-    $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors;
-    $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc);
-    $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc);
-    $('kvStorePath').textContent = cfg.StorePath || '(set on first run)';
+    if ($('kvSummary')) { $('kvSummary').textContent = cfg.LastScanSummary || 'Never scanned.'; }
+    if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
+    if ($('kvValues')) { $('kvValues').textContent = cfg.LastScanValues == null ? '—' : cfg.LastScanValues; }
+    if ($('kvErrors')) { $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors; }
+    if ($('kvStarted')) { $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc); }
+    if ($('kvFinished')) { $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc); }
+    if ($('kvStorePath')) { $('kvStorePath').textContent = cfg.StorePath || '(set on first run)'; }
   }
 
   function refreshTask() {
-    getJson('ScheduledTasks').then(function (tasks) {
+    apiGet('ScheduledTasks').then(function (tasks) {
       task = (tasks || []).filter(function (t) { return t.Key === TASK_KEY; })[0] || null;
       renderScanState();
     }).catch(function () { /* ignore */ });
   }
 
-  $('btnScan').addEventListener('click', function () {
-    if (!task) { return; }
-    if ($('chkFull').checked &&
-        !window.confirm('WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) {
-      return;
-    }
-    cfg.FullRescanRequested = $('chkFull').checked;
-    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      .then(function () { return postBare('ScheduledTasks/Running/' + task.Id); })
-      .then(function () {
-        setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
-        setTimeout(refreshTask, 700);
-      })
-      .catch(function (e) { setStatus('scanStatus', 'err', 'Could not start scan: ' + e); });
-  });
+  function wireScan() {
+    $('btnScan').addEventListener('click', function () {
+      if (!task) { return; }
+      if ($('chkFull').checked && !window.confirm(
+          'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) {
+        return;
+      }
+      cfg.FullRescanRequested = $('chkFull').checked;
+      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
+        .then(function () {
+          setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
+          setTimeout(refreshTask, 700);
+        })
+        .catch(function (e) { setStatus('scanStatus', 'err', 'Could not start scan: ' + e.message); });
+    });
 
-  $('btnCancel').addEventListener('click', function () {
-    if (!task) { return; }
-    postBare('ScheduledTasks/Running/' + task.Id).then(function () { setTimeout(refreshTask, 500); });
-  });
-
-  // ---------- advanced ----------
-  $('btnSaveAdvanced').addEventListener('click', function () {
-    cfg.Delimiters = $('delimiters').value;
-    postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      .then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
-      .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e); });
-  });
-
-  // ---------- boot ----------
-  function reloadConfig() {
-    return getJson('Plugins/' + PLUGIN_ID + '/Configuration').then(function (c) {
-      cfg = c || {};
-      cfg.Mappings = cfg.Mappings || [];
-      $('delimiters').value = cfg.Delimiters || '/|;:';
-      renderManage();
-      renderScanSummary();
+    $('btnCancel').addEventListener('click', function () {
+      if (!task) { return; }
+      apiPost('ScheduledTasks/Running/' + task.Id).then(function () { setTimeout(refreshTask, 500); });
     });
   }
 
-  reloadConfig().then(function () {
-    refreshTask();
-    setInterval(function () {
-      refreshTask();
-      if (scanRunning) {
-        reloadConfig().then(function () { renderScanState(); });
+  // ---- advanced ----
+  function wireAdvanced() {
+    $('btnSaveAdvanced').addEventListener('click', function () {
+      cfg.Delimiters = $('delimiters').value;
+      apiPost('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
+        .then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
+        .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e.message); });
+    });
+  }
+
+  // ---- boot ----
+  function loadConfig() {
+    return apiGet('Plugins/' + PLUGIN_ID + '/Configuration').then(function (c) {
+      cfg = c || {};
+      cfg.Mappings = cfg.Mappings || [];
+      if ($('delimiters')) { $('delimiters').value = cfg.Delimiters || '/|;:'; }
+      renderManage();
+      renderScanSummary();
+      boot('');
+    });
+  }
+
+  function init() {
+    try {
+      if (!$('AdvancedMetadataConfigPage')) { setTimeout(init, 200); return; }
+
+      if (!token()) {
+        boot('No access token found — open this page while signed in to Jellyfin.');
       }
-    }, 2500);
-  }).catch(function (e) {
-    $('scanText').textContent = 'Could not load configuration: ' + e;
-  });
+
+      wireTabs();
+      wireCreate();
+      wireManage();
+      wireScan();
+      wireAdvanced();
+
+      loadConfig().then(function () {
+        refreshTask();
+        setInterval(function () {
+          refreshTask();
+          if (scanRunning) { loadConfig().then(renderScanState); }
+        }, 2500);
+      }).catch(function (e) {
+        boot('');
+        setStatus('createStatus', 'err', 'Could not load configuration: ' + e.message);
+      });
+    } catch (e) {
+      boot('Script error: ' + e.message);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
