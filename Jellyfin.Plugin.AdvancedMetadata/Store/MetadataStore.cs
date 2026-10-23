@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.AdvancedMetadata.Store;
 
 public record FieldRow(string Name, string Display, string Hierarchy, int Items, int Values);
 
-public record BrowseRow(string Kind, string Item, string Field, string Value);
+public record BrowseRow(string Id, string Kind, string Item, string Detail, string Field, string Value);
 
 public class MetadataStore
 {
@@ -59,7 +59,6 @@ CREATE INDEX IF NOT EXISTS ix_items_name ON items(name);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
 
-        // upgrade path for databases created before the name column existed
         try
         {
             using var alter = c.CreateCommand();
@@ -68,7 +67,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         }
         catch
         {
-            // column already present
+            // already present
         }
 
         SetMeta("schema", "0.3");
@@ -84,14 +83,19 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// True only when the file is unchanged AND we already know its name.
+    /// Treating a missing name as "changed" backfills names on the next incremental scan.
+    /// </summary>
     public bool IsUnchanged(string jellyfinId, long mtime, long size)
     {
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT mtime, size FROM items WHERE jellyfin_id=$j;";
+        cmd.CommandText = "SELECT mtime, size, name FROM items WHERE jellyfin_id=$j;";
         cmd.Parameters.AddWithValue("$j", jellyfinId);
         using var r = cmd.ExecuteReader();
         if (!r.Read()) { return false; }
+        if (r.IsDBNull(2)) { return false; }
         return r.GetInt64(0) == mtime && r.GetInt64(1) == size;
     }
 
@@ -188,7 +192,6 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         tx.Commit();
     }
 
-    /// <summary>Removes all indexed values for one field. Returns how many rows went.</summary>
     public int ClearField(string field)
     {
         using var c = Open();
@@ -219,7 +222,6 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
                 Convert.ToInt32(v.ExecuteScalar(), CultureInfo.InvariantCulture));
     }
 
-    /// <summary>Per-mapping counts, for the Browse Index tab.</summary>
     public List<FieldRow> FieldSummary()
     {
         var rows = new List<FieldRow>();
@@ -235,9 +237,7 @@ ORDER BY f.name;";
         while (r.Read())
         {
             rows.Add(new FieldRow(
-                r.GetString(0),
-                r.GetString(1),
-                r.GetString(2),
+                r.GetString(0), r.GetString(1), r.GetString(2),
                 Convert.ToInt32(r.GetInt64(3), CultureInfo.InvariantCulture),
                 Convert.ToInt32(r.GetInt64(4), CultureInfo.InvariantCulture)));
         }
@@ -245,53 +245,61 @@ ORDER BY f.name;";
         return rows;
     }
 
-    /// <summary>Browse one mapping's indexed values, optionally filtered by value text.</summary>
-    public List<BrowseRow> BrowseField(string field, string? query, int limit)
+    /// <summary>Filter by mapping (blank = all mappings) and optionally by value text.</summary>
+    public List<BrowseRow> BrowseField(string field, string? query, int limit, int offset)
     {
         var rows = new List<BrowseRow>();
         using var c = Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = @"
-SELECT i.kind, COALESCE(i.name, i.path, i.jellyfin_id), f.name, v.value
+SELECT i.jellyfin_id, i.kind,
+       COALESCE(i.name, i.path, i.jellyfin_id),
+       COALESCE(i.path, ''),
+       f.name, v.value
 FROM vals v
 JOIN items i ON i.id = v.item_id
 JOIN fields f ON f.id = v.field_id
-WHERE f.name = $f AND ($q = '' OR v.value LIKE $like)
-ORDER BY i.name, v.value
-LIMIT $lim;";
-        cmd.Parameters.AddWithValue("$f", field.ToUpperInvariant());
+WHERE ($f = '' OR f.name = $f) AND ($q = '' OR v.value LIKE $like)
+ORDER BY COALESCE(i.name, i.path), f.name, v.value
+LIMIT $lim OFFSET $off;";
+        cmd.Parameters.AddWithValue("$f", (field ?? string.Empty).ToUpperInvariant());
         cmd.Parameters.AddWithValue("$q", query ?? string.Empty);
         cmd.Parameters.AddWithValue("$like", "%" + (query ?? string.Empty) + "%");
         cmd.Parameters.AddWithValue("$lim", limit);
+        cmd.Parameters.AddWithValue("$off", offset);
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
-            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3)));
+            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
         }
 
         return rows;
     }
 
-    /// <summary>All indexed values for items whose name matches — the "check one track" view.</summary>
-    public List<BrowseRow> BrowseItem(string name, int limit)
+    /// <summary>All indexed values for items matching a title or filename — the single-item view.</summary>
+    public List<BrowseRow> BrowseItem(string name, int limit, int offset)
     {
         var rows = new List<BrowseRow>();
         using var c = Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = @"
-SELECT i.kind, COALESCE(i.name, i.path, i.jellyfin_id), f.name, v.value
+SELECT i.jellyfin_id, i.kind,
+       COALESCE(i.name, i.path, i.jellyfin_id),
+       COALESCE(i.path, ''),
+       f.name, v.value
 FROM vals v
 JOIN items i ON i.id = v.item_id
 JOIN fields f ON f.id = v.field_id
-WHERE i.name LIKE $like
-ORDER BY i.name, f.name, v.value
-LIMIT $lim;";
+WHERE (i.name LIKE $like OR i.path LIKE $like)
+ORDER BY COALESCE(i.name, i.path), f.name, v.value
+LIMIT $lim OFFSET $off;";
         cmd.Parameters.AddWithValue("$like", "%" + name + "%");
         cmd.Parameters.AddWithValue("$lim", limit);
+        cmd.Parameters.AddWithValue("$off", offset);
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
-            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3)));
+            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
         }
 
         return rows;
