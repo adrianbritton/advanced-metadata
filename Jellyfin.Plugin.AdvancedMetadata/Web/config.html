@@ -1,9 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Advanced Metadata</title>
+
+<div id="AdvancedMetadataConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+
 <style>
   html, body { margin: 0; padding: 0; background: #0e1116; color: #e6edf3;
                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -92,15 +90,12 @@
   .am-checkrow { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
   .am-checkrow input { margin-top: 3px; }
 </style>
-</head>
-<body>
-<div id="AdvancedMetadataConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
 
   <div class="am-tabs" role="tablist">
-    <button class="am-tab" role="tab" data-tab="create"   aria-selected="true">Create Mapping</button>
-    <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false">Manage Mappings</button>
-    <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false">Scan Mappings</button>
-    <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false">Advanced</button>
+    <button class="am-tab" role="tab" data-tab="create"   aria-selected="true"  onclick="amShowTab('create')">Create Mapping</button>
+    <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false" onclick="amShowTab('manage')">Manage Mappings</button>
+    <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false" onclick="amShowTab('scan')">Scan Mappings</button>
+    <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false" onclick="amShowTab('advanced')">Advanced</button>
   </div>
 
   <div id="amDiag" class="am-diag">Starting…</div>
@@ -176,11 +171,11 @@
     <table class="am-table">
       <thead>
         <tr>
-          <th style="width:24%">Tag</th>
-          <th style="width:30%">Display name</th>
-          <th style="width:24%">Applies to</th>
+          <th style="width:22%">Tag</th>
+          <th style="width:28%">Display name</th>
+          <th style="width:22%">Applies to</th>
           <th style="width:14%">Created</th>
-          <th style="width:8%"></th>
+          <th style="width:14%"></th>
         </tr>
       </thead>
       <tbody id="manageRows"></tbody>
@@ -191,6 +186,11 @@
       <button id="btnDeleteAll" class="am-btn">Delete All Mappings</button>
       <button id="btnRebuild" class="am-btn">Rebuild Store</button>
     </div>
+    <div class="am-hint" style="max-width:620px">
+      Deleting a mapping removes the mapping <strong>and</strong> its indexed values.
+      Deleting all mappings empties the index completely. Your audio files and Jellyfin's
+      database are never touched.
+    </div>
     <div id="manageStatus" class="am-status"></div>
   </div>
 
@@ -198,19 +198,10 @@
   <div class="am-panel" data-panel="scan">
     <h2>Scan Mappings</h2>
     <p style="max-width:620px">
-      The scan reads your mapped tags into the plugin's own index. Your audio files and Jellyfin's
-      database are never modified.
+      A standard scan only looks for tracks that are new or changed since the last run, so it is
+      usually quick. It reads your mapped tags into the plugin's own index — your audio files and
+      Jellyfin's database are never modified.
     </p>
-
-    <div class="am-card">
-      <label class="am-checkrow">
-        <input id="chkFull" type="checkbox" />
-        <span>
-          <strong>Full rescan</strong>
-          <div class="am-hint">Ignore the incremental gate and re-read every track. Takes significantly longer.</div>
-        </span>
-      </label>
-    </div>
 
     <div class="am-actions">
       <button id="btnScan" class="am-btn am-btn-primary">Start Scan</button>
@@ -218,15 +209,28 @@
     </div>
     <div id="scanStatus" class="am-status"></div>
 
+    <div class="am-card" style="margin-top:20px">
+      <label class="am-checkrow">
+        <input id="chkFull" type="checkbox" />
+        <span>
+          <strong>Full Rescan</strong>
+          <div class="am-hint">A full rescan will re-read every track in the library and not just
+          recent changes. This takes significantly longer.</div>
+        </span>
+      </label>
+    </div>
+
     <div class="am-progressbar"><div id="scanBar"></div></div>
     <div id="scanText" class="am-progresstext">Checking scan state…</div>
 
     <div class="am-sep"></div>
 
-    <h3>Last scan</h3>
+    <h3>Last Scan</h3>
     <div class="am-card">
-      <div class="am-kv"><span>Summary</span><span id="kvSummary">—</span></div>
+      <div class="am-kv"><span>Scan status</span><span id="kvSummary">—</span></div>
+      <div class="am-kv"><span>Scan type</span><span id="kvType">—</span></div>
       <div class="am-kv"><span>Tracks read</span><span id="kvItems">—</span></div>
+      <div class="am-kv"><span>Unchanged / skipped</span><span id="kvSkipped">—</span></div>
       <div class="am-kv"><span>Values indexed</span><span id="kvValues">—</span></div>
       <div class="am-kv"><span>Errors</span><span id="kvErrors">—</span></div>
       <div class="am-kv"><span>Started</span><span id="kvStarted">—</span></div>
@@ -252,17 +256,27 @@
         Delimiters
       </div>
       <input id="delimiters" type="text" />
-      <div class="am-hint">Default: / | ; :</div>
+      <div class="am-hint">Default: / | ; : &nbsp;— these characters are treated as separators when a
+      tag holds more than one value.</div>
     </div>
+
     <div class="am-actions">
       <button id="btnSaveAdvanced" class="am-btn am-btn-primary">Save Settings</button>
+      <button id="btnRebuild2" class="am-btn">Rebuild Store</button>
     </div>
     <div id="advancedStatus" class="am-status"></div>
+
+    <div class="am-sep"></div>
+
+    <h3>Backups</h3>
+    <div class="am-hint" style="max-width:620px">
+      Plugin data lives in <span class="am-mono">/volume1/@appdata/jellyfin/data/plugins</span>.
+      Include that folder in your NAS backups. Take a full backup before using this page.
+      Download and restore tools are coming in the next release.
+    </div>
   </div>
 
-</div>
-
-<script>
+<script type="text/javascript">
 (function () {
   'use strict';
 
@@ -284,9 +298,7 @@
 
   function $(id) { return document.getElementById(id); }
 
-  /* ------------------------------------------------------------------ *
-   * Auth
-   * ------------------------------------------------------------------ */
+  /* ---------------- auth ---------------- */
 
   function client() {
     if (window.ApiClient && window.ApiClient.getUrl) { return window.ApiClient; }
@@ -349,11 +361,7 @@
     for (var i = 0; i < sources.length; i++) {
       var found;
       try { found = scanStore(sources[i][1]()); } catch (e) { found = null; }
-      if (found) {
-        tokenInfo.value = found;
-        tokenInfo.source = sources[i][0];
-        return found;
-      }
+      if (found) { tokenInfo.value = found; tokenInfo.source = sources[i][0]; return found; }
     }
     return null;
   }
@@ -379,7 +387,7 @@
     if (t) {
       h['X-Emby-Token'] = t;
       h['Authorization'] = 'MediaBrowser Token="' + t
-        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.3"';
+        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.6"';
     }
     if (json) { h['Content-Type'] = 'application/json'; }
     return h;
@@ -409,10 +417,6 @@
     return apiFetch(path, opts, false).then(function (r) { return r.text(); });
   }
 
-  /* ------------------------------------------------------------------ *
-   * Find our own plugin, so the ID can never go stale
-   * ------------------------------------------------------------------ */
-
   function pluginId() {
     if (idCache) { return Promise.resolve(idCache); }
     return apiGet('Plugins').then(function (list) {
@@ -431,9 +435,7 @@
     return pluginId().then(function (id) { return apiPost('Plugins/' + id + '/Configuration', c); });
   }
 
-  /* ------------------------------------------------------------------ *
-   * Helpers
-   * ------------------------------------------------------------------ */
+  /* ---------------- helpers ---------------- */
 
   function guid() {
     var s = '';
@@ -467,35 +469,43 @@
     if (!el) { return; }
     var t = findToken();
     el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source + ' (' + t.length + ' chars)' : 'NOT FOUND')
-      + ' &nbsp;·&nbsp; <b>base:</b> "' + (basePath() || '/') + '"'
       + ' &nbsp;·&nbsp; <b>ApiClient:</b> ' + (client() ? 'present' : 'absent')
       + ' &nbsp;·&nbsp; <b>pluginId:</b> ' + (idCache ? idCache.substring(0, 8) + '…' : 'resolving')
       + ' &nbsp;·&nbsp; <b>unhid:</b> ' + (unhidInfo || '—')
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
   }
 
-  /* ------------------------------------------------------------------ *
-   * Tabs
-   * ------------------------------------------------------------------ */
-
-  function wireTabs() {
-    var tabs = document.querySelectorAll('.am-tab');
-    Array.prototype.forEach.call(tabs, function (btn) {
-      btn.addEventListener('click', function () {
-        Array.prototype.forEach.call(tabs, function (b) {
-          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
-        });
-        Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
-          p.classList.toggle('active', p.getAttribute('data-panel') === btn.getAttribute('data-tab'));
-        });
-        if (btn.getAttribute('data-tab') === 'scan') { refreshTask(); }
-      });
-    });
+  function unhideAncestors() {
+    var n = $('AdvancedMetadataConfigPage');
+    var notes = [];
+    var steps = 0;
+    while (n && n !== document.body && steps < 40) {
+      steps++;
+      var cs = null;
+      try { cs = window.getComputedStyle(n); } catch (e) { cs = null; }
+      if (cs) {
+        if (cs.display === 'none') { n.style.display = 'block'; notes.push('display:' + (n.id || n.className || n.tagName)); }
+        if (cs.visibility === 'hidden') { n.style.visibility = 'visible'; notes.push('visibility:' + (n.id || n.className || n.tagName)); }
+      }
+      n = n.parentElement;
+    }
+    return notes;
   }
 
-  /* ------------------------------------------------------------------ *
-   * Create
-   * ------------------------------------------------------------------ */
+  /* ---------------- tabs ---------------- */
+
+  window.amShowTab = function (name) {
+    var tabs = document.querySelectorAll('.am-tab');
+    Array.prototype.forEach.call(tabs, function (b) {
+      b.setAttribute('aria-selected', b.getAttribute('data-tab') === name ? 'true' : 'false');
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
+      p.classList.toggle('active', p.getAttribute('data-panel') === name);
+    });
+    if (name === 'scan') { refreshTask(); }
+  };
+
+  /* ---------------- create ---------------- */
 
   function duplicate(tag) {
     return (cfg.Mappings || []).some(function (m) {
@@ -524,61 +534,46 @@
 
       cfg.Mappings = cfg.Mappings || [];
       cfg.Mappings.push({
-        Id: guid(),
-        SourceTag: tag.toUpperCase(),
-        DisplayName: display || tag.toUpperCase(),
-        Hierarchy: hier,
-        CreatedUtc: new Date().toISOString()
+        Id: guid(), SourceTag: tag.toUpperCase(), DisplayName: display || tag.toUpperCase(),
+        Hierarchy: hier, CreatedUtc: new Date().toISOString()
       });
 
-      saveConfig(cfg)
-        .then(function () {
-          setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
-          $('newTag').value = '';
-          $('newDisplay').value = '';
-          renderManage();
-        })
-        .catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
+      saveConfig(cfg).then(function () {
+        setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
+        $('newTag').value = ''; $('newDisplay').value = '';
+        renderManage();
+      }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
     $('btnBulk').addEventListener('click', function () {
       var tags = $('bulkTags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
       var hier = $('bulkHierarchy').value;
-
       if (!tags.length) { setStatus('bulkStatus', 'err', 'Enter at least one tag name.'); return; }
 
       var clash = tags.filter(duplicate);
-      if (clash.length && !window.confirm(
-          'WARNING: The following already exist and will be skipped: ' + clash.join(', ')
-          + '. Continue?')) { return; }
+      if (clash.length && !window.confirm('WARNING: The following already exist and will be skipped: '
+          + clash.join(', ') + '. Continue?')) { return; }
 
       cfg.Mappings = cfg.Mappings || [];
       var added = 0;
       tags.forEach(function (t) {
         if (duplicate(t)) { return; }
         cfg.Mappings.push({
-          Id: guid(),
-          SourceTag: t.toUpperCase(),
-          DisplayName: t.toUpperCase(),
-          Hierarchy: hier,
-          CreatedUtc: new Date().toISOString()
+          Id: guid(), SourceTag: t.toUpperCase(), DisplayName: t.toUpperCase(),
+          Hierarchy: hier, CreatedUtc: new Date().toISOString()
         });
         added++;
       });
 
-      saveConfig(cfg)
-        .then(function () {
-          setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
-          $('bulkTags').value = '';
-          renderManage();
-        })
-        .catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e.message); });
+      saveConfig(cfg).then(function () {
+        setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
+        $('bulkTags').value = '';
+        renderManage();
+      }).catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
   }
 
-  /* ------------------------------------------------------------------ *
-   * Manage
-   * ------------------------------------------------------------------ */
+  /* ---------------- manage ---------------- */
 
   function renderManage() {
     var body = $('manageRows');
@@ -590,16 +585,12 @@
 
     list.forEach(function (m) {
       var tr = document.createElement('tr');
-
       var tdTag = document.createElement('td');
-      tdTag.className = 'am-mono';
-      tdTag.textContent = m.SourceTag;
-      tdTag.title = m.SourceTag;
+      tdTag.className = 'am-mono'; tdTag.textContent = m.SourceTag; tdTag.title = m.SourceTag;
       tr.appendChild(tdTag);
 
       var tdName = document.createElement('td');
-      tdName.textContent = m.DisplayName;
-      tdName.title = m.DisplayName;
+      tdName.textContent = m.DisplayName; tdName.title = m.DisplayName;
       tr.appendChild(tdName);
 
       var tdHier = document.createElement('td');
@@ -618,13 +609,11 @@
         if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName
             + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
         cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
-        saveConfig(cfg)
-          .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
+        saveConfig(cfg).then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
           .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
       });
       tdAct.appendChild(del);
       tr.appendChild(tdAct);
-
       body.appendChild(tr);
     });
   }
@@ -634,20 +623,19 @@
       if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
       if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
       cfg.Mappings = [];
-      saveConfig(cfg)
-        .then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
+      saveConfig(cfg).then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
         .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
-    $('btnRebuild').addEventListener('click', function () {
+    var rebuild = function () {
       if (!window.confirm('Rebuild the index from scratch? This clears all indexed values; you will need to run a scan afterwards.')) { return; }
       setStatus('manageStatus', 'info', 'Rebuild is not wired up yet — coming in the next release.');
-    });
+    };
+    $('btnRebuild').addEventListener('click', rebuild);
+    if ($('btnRebuild2')) { $('btnRebuild2').addEventListener('click', rebuild); }
   }
 
-  /* ------------------------------------------------------------------ *
-   * Scan
-   * ------------------------------------------------------------------ */
+  /* ---------------- scan ---------------- */
 
   function renderScanState() {
     if (!task) {
@@ -655,7 +643,6 @@
       $('btnScan').disabled = true;
       return;
     }
-
     var state = task.State || 'Idle';
     var running = state === 'Running' || state === 'Cancelling';
     scanRunning = running;
@@ -687,7 +674,9 @@
 
   function renderScanSummary() {
     if ($('kvSummary')) { $('kvSummary').textContent = cfg.LastScanSummary || 'Never scanned.'; }
+    if ($('kvType')) { $('kvType').textContent = cfg.LastScanType || '—'; }
     if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
+    if ($('kvSkipped')) { $('kvSkipped').textContent = cfg.LastScanSkipped == null ? '—' : cfg.LastScanSkipped; }
     if ($('kvValues')) { $('kvValues').textContent = cfg.LastScanValues == null ? '—' : cfg.LastScanValues; }
     if ($('kvErrors')) { $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors; }
     if ($('kvStarted')) { $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc); }
@@ -706,9 +695,7 @@
     $('btnScan').addEventListener('click', function () {
       if (!task) { return; }
       if ($('chkFull').checked && !window.confirm(
-          'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) {
-        return;
-      }
+          'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) { return; }
       cfg.FullRescanRequested = $('chkFull').checked;
       saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
@@ -725,22 +712,17 @@
     });
   }
 
-  /* ------------------------------------------------------------------ *
-   * Advanced
-   * ------------------------------------------------------------------ */
+  /* ---------------- advanced ---------------- */
 
   function wireAdvanced() {
     $('btnSaveAdvanced').addEventListener('click', function () {
       cfg.Delimiters = $('delimiters').value;
-      saveConfig(cfg)
-        .then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
+      saveConfig(cfg).then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
         .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
   }
 
-  /* ------------------------------------------------------------------ *
-   * Boot
-   * ------------------------------------------------------------------ */
+  /* ---------------- boot ---------------- */
 
   function loadConfig() {
     return getConfig().then(function (c) {
@@ -753,29 +735,6 @@
     });
   }
 
-function unhideAncestors() {
-    var n = $('AdvancedMetadataConfigPage');
-    var notes = [];
-    var steps = 0;
-    while (n && n !== document.body && steps < 40) {
-      steps++;
-      var cs = null;
-      try { cs = window.getComputedStyle(n); } catch (e) { cs = null; }
-      if (cs) {
-        if (cs.display === 'none') {
-          n.style.display = 'block';
-          notes.push('display:' + (n.id || n.className || n.tagName));
-        }
-        if (cs.visibility === 'hidden') {
-          n.style.visibility = 'visible';
-          notes.push('visibility:' + (n.id || n.className || n.tagName));
-        }
-      }
-      n = n.parentElement;
-    }
-    return notes;
-  }
-  
   function init() {
     try {
       if (!$('AdvancedMetadataConfigPage')) { setTimeout(init, 200); return; }
@@ -783,7 +742,6 @@ function unhideAncestors() {
       var fixed = unhideAncestors();
       unhidInfo = fixed.length ? fixed.join(' | ') : 'none needed';
 
-      wireTabs();
       wireCreate();
       wireManage();
       wireScan();
@@ -818,5 +776,5 @@ function unhideAncestors() {
   }
 })();
 </script>
-</body>
-</html>
+
+</div>
