@@ -1,6 +1,5 @@
-using System;                            // TimeSpan
-using System.Collections.Generic;        // IEnumerable<>
-using MediaBrowser.Model.Tasks;          // IScheduledTask, TaskTriggerInfo, TaskTriggerInfoType
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -11,6 +10,7 @@ using Jellyfin.Plugin.AdvancedMetadata.Store;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AdvancedMetadata.Scanning;
@@ -56,16 +56,19 @@ public class ScanTask : IScheduledTask
         var plugin = Plugin.Instance!;
         var cfg = plugin.Configuration;
 
+        var full = cfg.FullRescanRequested;
+        cfg.FullRescanRequested = false;
         cfg.LastScanStartedUtc = DateTime.UtcNow;
         cfg.LastScanFinishedUtc = null;
         cfg.LastScanError = string.Empty;
         cfg.LastScanItems = 0;
+        cfg.LastScanSkipped = 0;
         cfg.LastScanValues = 0;
         cfg.LastScanErrors = 0;
         cfg.LastScanTotal = 0;
-        cfg.LastScanSummary = "Scan running...";
-        var full = cfg.FullRescanRequested;
-        cfg.FullRescanRequested = false;
+        cfg.LastScanType = full ? "Full Scan" : "Incremental Scan";
+        cfg.LastScanStatus = "Running";
+        cfg.LastScanSummary = string.Empty;
         plugin.UpdateConfiguration(cfg);
 
         try
@@ -93,13 +96,13 @@ public class ScanTask : IScheduledTask
             plugin.UpdateConfiguration(cfg);
 
             _logger.LogInformation(
-                "Advanced Metadata: scanning {Count} tracks (full rescan: {Full}) into {Path}",
-                items.Count, full, _store.DatabasePath);
+                "Advanced Metadata: {Type} over {Count} tracks into {Path}",
+                cfg.LastScanType, items.Count, _store.DatabasePath);
 
             var done = 0;
+            var skipped = 0;
             var values = 0;
             var errors = 0;
-            var skipped = 0;
 
             foreach (var item in items)
             {
@@ -114,11 +117,12 @@ public class ScanTask : IScheduledTask
                 if (done % 250 == 0)
                 {
                     cfg.LastScanItems = done;
+                    cfg.LastScanSkipped = skipped;
                     plugin.UpdateConfiguration(cfg);
                 }
 
                 var path = item.Path;
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) { continue; }
 
                 var key = item.Id.ToString("N");
                 long mtime;
@@ -145,7 +149,7 @@ public class ScanTask : IScheduledTask
                 long itemId;
                 try
                 {
-                    itemId = _store.UpsertItem(key, "Audio", path, mtime, size);
+                    itemId = _store.UpsertItem(key, "Audio", item.Name, path, mtime, size);
                 }
                 catch (Exception ex)
                 {
@@ -157,7 +161,7 @@ public class ScanTask : IScheduledTask
                 foreach (var m in mappings)
                 {
                     var vals = ReadTag(path, m.SourceTag, delims);
-                    if (vals.Count == 0) continue;
+                    if (vals.Count == 0) { continue; }
 
                     _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
                     values += vals.Count;
@@ -167,16 +171,17 @@ public class ScanTask : IScheduledTask
                         var albumId = GetGuidProperty(item, "AlbumEntityId") ?? GetGuidProperty(item, "AlbumId");
                         if (albumId.HasValue)
                         {
-                            var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum", null, 0, 0);
+                            var albumName = GetStringProperty(item, "Album");
+                            var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum", albumName, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
                         }
                     }
 
                     if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
                     {
-                        foreach (var artistId in GetArtistIds(item))
+                        foreach (var artist in GetArtists(item))
                         {
-                            var tid = _store.UpsertItem(artistId.ToString("N"), "MusicArtist", null, 0, 0);
+                            var tid = _store.UpsertItem(artist.Id.ToString("N"), "MusicArtist", artist.Name, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
                         }
                     }
@@ -185,20 +190,30 @@ public class ScanTask : IScheduledTask
 
             progress.Report(100);
             cfg.LastScanItems = done;
+            cfg.LastScanSkipped = skipped;
             cfg.LastScanValues = values;
             cfg.LastScanErrors = errors;
             cfg.LastScanFinishedUtc = DateTime.UtcNow;
-            cfg.LastScanSummary = $"Scan complete: {done} tracks read ({skipped} unchanged, skipped), {values} values indexed, {errors} errors.";
+            cfg.LastScanStatus = "Complete";
+            cfg.LastScanSummary = $"{done} read, {skipped} unchanged, {values} indexed, {errors} errors.";
             plugin.UpdateConfiguration(cfg);
+
             _logger.LogInformation(
-                "Advanced Metadata: {Summary} Index size: {Bytes} bytes",
+                "Advanced Metadata: scan complete. {Summary} Index size {Bytes} bytes",
                 cfg.LastScanSummary, _store.SizeBytes);
+        }
+        catch (OperationCanceledException)
+        {
+            cfg.LastScanStatus = "Cancelled";
+            cfg.LastScanFinishedUtc = DateTime.UtcNow;
+            plugin.UpdateConfiguration(cfg);
+            throw;
         }
         catch (Exception ex)
         {
+            cfg.LastScanStatus = "Failed To Execute";
             cfg.LastScanError = ex.Message;
             cfg.LastScanFinishedUtc = DateTime.UtcNow;
-            cfg.LastScanSummary = "Scan FAILED: " + ex.Message;
             plugin.UpdateConfiguration(cfg);
             _logger.LogError(ex, "Advanced Metadata scan failed");
             throw;
@@ -208,19 +223,30 @@ public class ScanTask : IScheduledTask
     private static Guid? GetGuidProperty(BaseItem item, string name)
     {
         var p = item.GetType().GetProperty(name);
-        if (p?.GetValue(item) is Guid g && g != Guid.Empty) return g;
+        if (p?.GetValue(item) is Guid g && g != Guid.Empty) { return g; }
         return null;
     }
 
-    private static IEnumerable<Guid> GetArtistIds(BaseItem item)
+    private static string? GetStringProperty(BaseItem item, string name)
+    {
+        var p = item.GetType().GetProperty(name);
+        return p?.GetValue(item) as string;
+    }
+
+    private static IEnumerable<(Guid Id, string? Name)> GetArtists(BaseItem item)
     {
         var p = item.GetType().GetProperty("ArtistItems");
         if (p?.GetValue(item) is System.Collections.IEnumerable list)
         {
             foreach (var entry in list)
             {
-                var idProp = entry?.GetType().GetProperty("Id");
-                if (idProp?.GetValue(entry) is Guid g && g != Guid.Empty) yield return g;
+                if (entry is null) { continue; }
+                var idProp = entry.GetType().GetProperty("Id");
+                var nameProp = entry.GetType().GetProperty("Name");
+                if (idProp?.GetValue(entry) is Guid g && g != Guid.Empty)
+                {
+                    yield return (g, nameProp?.GetValue(entry) as string);
+                }
             }
         }
     }
@@ -239,35 +265,33 @@ public class ScanTask : IScheduledTask
             {
                 case "ARTIST": result.AddRange(t.Performers); break;
                 case "ALBUMARTIST": result.AddRange(t.AlbumArtists); break;
-                case "ALBUM": if (!string.IsNullOrWhiteSpace(t.Album)) result.Add(t.Album); break;
-                case "TITLE": if (!string.IsNullOrWhiteSpace(t.Title)) result.Add(t.Title); break;
+                case "ALBUM": if (!string.IsNullOrWhiteSpace(t.Album)) { result.Add(t.Album); } break;
+                case "TITLE": if (!string.IsNullOrWhiteSpace(t.Title)) { result.Add(t.Title); } break;
                 case "GENRE": result.AddRange(t.Genres); break;
                 case "COMPOSER": result.AddRange(t.Composers); break;
-                case "YEAR": if (t.Year > 0) result.Add(t.Year.ToString(CultureInfo.InvariantCulture)); break;
-                case "TRACKNUMBER": if (t.Track > 0) result.Add(t.Track.ToString(CultureInfo.InvariantCulture)); break;
-                case "DISCNUMBER": if (t.Disc > 0) result.Add(t.Disc.ToString(CultureInfo.InvariantCulture)); break;
+                case "YEAR": if (t.Year > 0) { result.Add(t.Year.ToString(CultureInfo.InvariantCulture)); } break;
+                case "TRACKNUMBER": if (t.Track > 0) { result.Add(t.Track.ToString(CultureInfo.InvariantCulture)); } break;
+                case "DISCNUMBER": if (t.Disc > 0) { result.Add(t.Disc.ToString(CultureInfo.InvariantCulture)); } break;
             }
 
-            if (result.Count == 0)
+            // Custom ID3v2 TXXX frames. Every frame with a matching description is read,
+            // so repeated tags of the same name are all captured.
+            if (f.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3)
             {
-                // custom ID3v2 TXXX frames, e.g. LABEL, OWNER, CATALOGNUMBER
-                if (f.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3)
+                foreach (var frame in id3.GetFrames<TagLib.Id3v2.UserTextInformationFrame>())
                 {
-                    foreach (var frame in id3.GetFrames<TagLib.Id3v2.UserTextInformationFrame>())
+                    if (string.Equals(frame.Description, wanted, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (string.Equals(frame.Description, wanted, StringComparison.OrdinalIgnoreCase))
-                        {
-                            result.AddRange(frame.Text);
-                        }
+                        result.AddRange(frame.Text);
                     }
                 }
+            }
 
-                // FLAC / Ogg Vorbis comments
-                if (result.Count == 0 && f.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
-                {
-                    var field = xiph.GetField(wanted);
-                    if (field is not null) result.AddRange(field);
-                }
+            // FLAC / Ogg Vorbis comments (may hold multiple values for one field).
+            if (f.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+            {
+                var field = xiph.GetField(wanted);
+                if (field is not null) { result.AddRange(field); }
             }
         }
         catch
