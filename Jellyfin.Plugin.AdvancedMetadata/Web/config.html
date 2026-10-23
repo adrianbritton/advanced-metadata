@@ -8,7 +8,8 @@
   html, body { margin: 0; padding: 0; background: #0e1116; color: #e6edf3;
                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                font-size: 15px; line-height: 1.5; }
-  #AdvancedMetadataConfigPage { background: #0e1116; color: #e6edf3; padding: 20px 24px 60px; max-width: 1080px; min-height: 60vh; }
+  #AdvancedMetadataConfigPage { display: block !important; visibility: visible !important;
+    background: #0e1116; color: #e6edf3; padding: 20px 24px 60px; max-width: 1080px; min-height: 60vh; }
 
   #AdvancedMetadataConfigPage h2 { font-size: 1.35em; margin: 0 0 .6em; }
   #AdvancedMetadataConfigPage h3 { font-size: 1.1em; margin: 1.6em 0 .6em; }
@@ -93,7 +94,7 @@
 </style>
 </head>
 <body>
-<div id="AdvancedMetadataConfigPage">
+<div id="AdvancedMetadataConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
 
   <div class="am-tabs" role="tablist">
     <button class="am-tab" role="tab" data-tab="create"   aria-selected="true">Create Mapping</button>
@@ -272,6 +273,7 @@
   var scanRunning = false;
   var tokenInfo = { value: null, source: null, done: false };
   var idCache = null;
+  var unhidInfo = '';
 
   var HIER = {
     songs: 'Songs only',
@@ -468,6 +470,7 @@
       + ' &nbsp;·&nbsp; <b>base:</b> "' + (basePath() || '/') + '"'
       + ' &nbsp;·&nbsp; <b>ApiClient:</b> ' + (client() ? 'present' : 'absent')
       + ' &nbsp;·&nbsp; <b>pluginId:</b> ' + (idCache ? idCache.substring(0, 8) + '…' : 'resolving')
+      + ' &nbsp;·&nbsp; <b>unhid:</b> ' + (unhidInfo || '—')
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
   }
 
@@ -750,9 +753,35 @@
     });
   }
 
+function unhideAncestors() {
+    var n = $('AdvancedMetadataConfigPage');
+    var notes = [];
+    var steps = 0;
+    while (n && n !== document.body && steps < 40) {
+      steps++;
+      var cs = null;
+      try { cs = window.getComputedStyle(n); } catch (e) { cs = null; }
+      if (cs) {
+        if (cs.display === 'none') {
+          n.style.display = 'block';
+          notes.push('display:' + (n.id || n.className || n.tagName));
+        }
+        if (cs.visibility === 'hidden') {
+          n.style.visibility = 'visible';
+          notes.push('visibility:' + (n.id || n.className || n.tagName));
+        }
+      }
+      n = n.parentElement;
+    }
+    return notes;
+  }
+  
   function init() {
     try {
       if (!$('AdvancedMetadataConfigPage')) { setTimeout(init, 200); return; }
+
+      var fixed = unhideAncestors();
+      unhidInfo = fixed.length ? fixed.join(' | ') : 'none needed';
 
       wireTabs();
       wireCreate();
