@@ -94,6 +94,7 @@
   <div class="am-tabs" role="tablist">
     <button class="am-tab" role="tab" data-tab="create"   aria-selected="true"  onclick="amShowTab('create')">Create Mapping</button>
     <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false" onclick="amShowTab('manage')">Manage Mappings</button>
+    <button class="am-tab" role="tab" data-tab="data"     aria-selected="false" onclick="amShowTab('data')">Browse Index</button>
     <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false" onclick="amShowTab('scan')">Scan Mappings</button>
     <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false" onclick="amShowTab('advanced')">Advanced</button>
   </div>
@@ -127,8 +128,9 @@
         Where should this data appear?
       </div>
       <select id="newHierarchy">
+        <option value="">— Please select —</option>
         <option value="songs">Songs only</option>
-        <option value="songs_albums" selected>Songs + Parent Albums</option>
+        <option value="songs_albums">Songs + Parent Albums</option>
         <option value="albums">Parent Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
@@ -152,9 +154,10 @@
     </div>
     <div class="am-field">
       <div class="am-label">Hierarchy for bulk entries</div>
-      <select id="bulkHierarchy">
+ <select id="bulkHierarchy">
+        <option value="">— Please select —</option>
         <option value="songs">Songs only</option>
-        <option value="songs_albums" selected>Songs + Parent Albums</option>
+        <option value="songs_albums">Songs + Parent Albums</option>
         <option value="albums">Parent Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
@@ -194,6 +197,57 @@
     <div id="manageStatus" class="am-status"></div>
   </div>
 
+ <!-- ============ BROWSE INDEX ============ -->
+  <div class="am-panel" data-panel="data">
+    <h2>Browse Index</h2>
+    <p style="max-width:620px">
+      This is exactly what the plugin has indexed. Nothing here comes from Jellyfin — it is the
+      plugin's own data, so you can verify the scan is reading your tags correctly.
+    </p>
+
+    <h3>Find a track or album</h3>
+    <div class="am-field">
+      <input id="dataItem" type="text" placeholder="Type part of a title, then press Enter" autocomplete="off" />
+      <div class="am-hint">Shows every indexed value for matching items, across all mappings and hierarchy levels.</div>
+    </div>
+    <div class="am-actions">
+      <button id="btnDataItem" class="am-btn am-btn-primary">Search by item</button>
+    </div>
+
+    <div class="am-sep"></div>
+
+    <h3>Browse one mapping</h3>
+    <div class="am-field">
+      <div class="am-label">Mapping</div>
+      <select id="dataField"></select>
+    </div>
+    <div class="am-field">
+      <input id="dataValue" type="text" placeholder="Filter by value (optional)" autocomplete="off" />
+    </div>
+    <div class="am-actions">
+      <button id="btnDataField" class="am-btn am-btn-primary">Show values</button>
+    </div>
+
+    <div id="dataStatus" class="am-status"></div>
+
+    <div class="am-sep"></div>
+
+    <h3>Results</h3>
+    <div id="dataCount" class="am-hint"></div>
+    <table class="am-table" style="margin-top:12px">
+      <thead>
+        <tr>
+          <th style="width:40%">Item</th>
+          <th style="width:14%">Level</th>
+          <th style="width:20%">Mapping</th>
+          <th style="width:26%">Value</th>
+        </tr>
+      </thead>
+      <tbody id="dataRows"></tbody>
+    </table>
+    <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
+  </div>
+
   <!-- ============ SCAN ============ -->
   <div class="am-panel" data-panel="scan">
     <h2>Scan Mappings</h2>
@@ -227,7 +281,8 @@
 
     <h3>Last Scan</h3>
     <div class="am-card">
-      <div class="am-kv"><span>Scan status</span><span id="kvSummary">—</span></div>
+      <div class="am-kv"><span>Scan status</span><span id="kvStatus">—</span></div>
+      <div class="am-kv"><span>Detail</span><span id="kvSummary">—</span></div>
       <div class="am-kv"><span>Scan type</span><span id="kvType">—</span></div>
       <div class="am-kv"><span>Tracks read</span><span id="kvItems">—</span></div>
       <div class="am-kv"><span>Unchanged / skipped</span><span id="kvSkipped">—</span></div>
@@ -244,9 +299,12 @@
 
     <h3>Store</h3>
     <div class="am-card">
-      <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
-      <div class="am-kv"><span>Schema version</span><span id="kvSchema">0.2</span></div>
+     <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
+      <div class="am-kv"><span>Schema version</span><span id="kvSchema">—</span></div>
       <div class="am-kv"><span>Mappings</span><span id="kvMappingCount">—</span></div>
+      <div class="am-kv"><span>Indexed items</span><span id="kvItemCount">—</span></div>
+      <div class="am-kv"><span>Indexed values</span><span id="kvValueCount">—</span></div>
+      <div class="am-kv"><span>Index size</span><span id="kvSize">—</span></div>
     </div>
 
     <h3>Tag delimiters</h3>
@@ -464,6 +522,82 @@
     return isNaN(d.getTime()) ? '—' : d.toLocaleString();
   }
 
+function disableLinks(off) {
+    Array.prototype.forEach.call(document.querySelectorAll('.am-link'), function (b) {
+      b.disabled = off;
+      b.style.opacity = off ? '.45' : '';
+    });
+  }
+
+  function refreshDataFields() {
+    var sel = $('dataField');
+    if (!sel) { return; }
+    apiGet('AdvancedMetadataData/Fields').then(function (list) {
+      sel.innerHTML = '';
+      (list || []).forEach(function (f) {
+        var o = document.createElement('option');
+        o.value = f.Name || f.name;
+        var n = (f.Items != null ? f.Items : 0);
+        var v = (f.Values != null ? f.Values : 0);
+        o.textContent = (f.Display || f.Name) + '  —  ' + v + ' values on ' + n + ' items';
+        sel.appendChild(o);
+      });
+    }).catch(function () { /* ignore */ });
+  }
+
+  function renderData(rows) {
+    var body = $('dataRows');
+    body.innerHTML = '';
+    rows = rows || [];
+    $('dataEmpty').style.display = rows.length ? 'none' : 'block';
+    $('dataCount').textContent = rows.length ? rows.length + ' row(s) shown (max 300)' : '';
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      var a = document.createElement('td'); a.textContent = r.Item || r.item; a.title = a.textContent; tr.appendChild(a);
+      var b = document.createElement('td'); b.textContent = r.Kind || r.kind; tr.appendChild(b);
+      var c = document.createElement('td'); c.className = 'am-mono'; c.textContent = r.Field || r.field; tr.appendChild(c);
+      var d = document.createElement('td'); d.textContent = r.Value || r.value; d.title = d.textContent; tr.appendChild(d);
+      body.appendChild(tr);
+    });
+  }
+
+  function loadInfo() {
+    apiGet('AdvancedMetadataData/Info').then(function (i) {
+      if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || i.storePath || '—'; }
+      if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || i.schema || '—'; }
+      if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
+      if ($('kvValueCount')) { $('kvValueCount').textContent = i.Values != null ? i.Values : '—'; }
+      if ($('kvSize')) {
+        var s = i.SizeBytes != null ? i.SizeBytes : (i.sizeBytes != null ? i.sizeBytes : -1);
+        $('kvSize').textContent = s > 0 ? (Math.round(s / 1024) + ' KB') : '—';
+      }
+    }).catch(function () { /* ignore */ });
+  }
+
+  function wireData() {
+    $('btnDataItem').addEventListener('click', function () {
+      var n = $('dataItem').value.trim();
+      if (!n) { setStatus('dataStatus', 'warn', 'Type part of a title first.'); return; }
+      apiGet('AdvancedMetadataData/Item?name=' + encodeURIComponent(n))
+        .then(function (rows) { renderData(rows); setStatus('dataStatus', 'info', 'Search complete.'); })
+        .catch(function (e) { setStatus('dataStatus', 'err', 'Search failed: ' + e.message); });
+    });
+
+    $('dataItem').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { $('btnDataItem').click(); }
+    });
+
+    $('btnDataField').addEventListener('click', function () {
+      var f = $('dataField').value;
+      if (!f) { setStatus('dataStatus', 'warn', 'No mapping selected.'); return; }
+      var v = $('dataValue').value.trim();
+      apiGet('AdvancedMetadataData/Values?field=' + encodeURIComponent(f)
+        + '&q=' + encodeURIComponent(v))
+        .then(function (rows) { renderData(rows); setStatus('dataStatus', 'info', 'Search complete.'); })
+        .catch(function (e) { setStatus('dataStatus', 'err', 'Search failed: ' + e.message); });
+    });
+  }
+  
   function diag(extra) {
     var el = $('amDiag');
     if (!el) { return; }
@@ -503,6 +637,7 @@
       p.classList.toggle('active', p.getAttribute('data-panel') === name);
     });
     if (name === 'scan') { refreshTask(); }
+    if (name === 'data') { refreshDataFields(); loadInfo(); }
   };
 
   /* ---------------- create ---------------- */
@@ -529,7 +664,8 @@
       var display = $('newDisplay').value.trim();
       var hier = $('newHierarchy').value;
 
-      if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
+    if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
+      if (!hier) { setStatus('createStatus', 'err', 'Please select what hierarchy this mapping should inherit.'); return; }
       if (duplicate(tag)) { setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.'); return; }
 
       cfg.Mappings = cfg.Mappings || [];
@@ -545,10 +681,22 @@
       }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
+    $('bulkTags').addEventListener('input', function () {
+      var tags = this.value.split(',').map(function (t) { return t.trim().toUpperCase(); }).filter(Boolean);
+      if (!tags.length) { clearStatus('bulkStatus'); return; }
+      var clash = tags.filter(duplicate);
+      if (clash.length) {
+        setStatus('bulkStatus', 'warn', 'Already exists, will be skipped: ' + clash.join(', '));
+      } else {
+        setStatus('bulkStatus', 'ok', tags.length + ' new mapping(s) ready to create.');
+      }
+    });
+    
     $('btnBulk').addEventListener('click', function () {
       var tags = $('bulkTags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
       var hier = $('bulkHierarchy').value;
       if (!tags.length) { setStatus('bulkStatus', 'err', 'Enter at least one tag name.'); return; }
+      if (!hier) { setStatus('bulkStatus', 'err', 'Please select a hierarchy for these mappings.'); return; }
 
       var clash = tags.filter(duplicate);
       if (clash.length && !window.confirm('WARNING: The following already exist and will be skipped: '
@@ -606,11 +754,21 @@
       del.className = 'am-link am-link-danger';
       del.textContent = 'Delete';
       del.addEventListener('click', function () {
-        if (!window.confirm('WARNING: Mapping data for ' + m.DisplayName
-            + ' will be deleted upon removal of this custom mapping. Do you want to continue?')) { return; }
-        cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
-        saveConfig(cfg).then(function () { renderManage(); setStatus('manageStatus', 'ok', 'Mapping removed.'); })
-          .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
+       if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
+            + m.SourceTag + '" from the plugin index. Your audio files and Jellyfin are not touched. Continue?')) { return; }
+        apiPost('AdvancedMetadataData/DeleteFieldValues?field=' + encodeURIComponent(m.SourceTag))
+          .then(function (r) {
+            var removed = 0;
+            try { removed = JSON.parse(r).Removed || JSON.parse(r).removed || 0; } catch (e) { removed = 0; }
+            cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
+            return saveConfig(cfg).then(function () {
+              renderManage();
+              setStatus('manageStatus', 'ok',
+                'Mapping removed and ' + removed + ' indexed value(s) deleted from the index.');
+              loadInfo();
+            });
+          })
+          .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
       });
       tdAct.appendChild(del);
       tr.appendChild(tdAct);
@@ -621,15 +779,27 @@
   function wireManage() {
     $('btnDeleteAll').addEventListener('click', function () {
       if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
-      if (!window.confirm('WARNING: All existing mapping data will be deleted upon removal of ALL custom mappings. Do you want to continue?')) { return; }
-      cfg.Mappings = [];
-      saveConfig(cfg).then(function () { renderManage(); setStatus('manageStatus', 'ok', 'All mappings deleted.'); })
-        .catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
+     if (!window.confirm('WARNING: This removes EVERY mapping AND empties the entire plugin index. '
+          + 'Your audio files and Jellyfin are not touched. Continue?')) { return; }
+      apiPost('AdvancedMetadataData/ClearAll')
+        .then(function () {
+          cfg.Mappings = [];
+          return saveConfig(cfg).then(function () {
+            renderManage();
+            setStatus('manageStatus', 'ok', 'All mappings deleted and the index emptied.');
+            loadInfo();
+          });
+        })
+        .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
     });
 
-    var rebuild = function () {
-      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values; you will need to run a scan afterwards.')) { return; }
-      setStatus('manageStatus', 'info', 'Rebuild is not wired up yet — coming in the next release.');
+   var rebuild = function () {
+      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
+          + 'You must run a scan afterwards. Continue?')) { return; }
+      apiPost('AdvancedMetadataData/ClearAll').then(function () {
+        setStatus('manageStatus', 'ok', 'Index cleared. Run a scan to rebuild it.');
+        loadInfo();
+      }).catch(function (e) { setStatus('manageStatus', 'err', 'REBUILD FAILED: ' + e.message); });
     };
     $('btnRebuild').addEventListener('click', rebuild);
     if ($('btnRebuild2')) { $('btnRebuild2').addEventListener('click', rebuild); }
@@ -670,10 +840,15 @@
     $('btnCancel').disabled = !running;
     $('btnCreate').disabled = running;
     $('btnBulk').disabled = running;
+    $('btnDeleteAll').disabled = running;
+    $('btnRebuild').disabled = running;
+    if ($('btnRebuild2')) { $('btnRebuild2').disabled = running; }
+    disableLinks(running);
   }
 
   function renderScanSummary() {
-    if ($('kvSummary')) { $('kvSummary').textContent = cfg.LastScanSummary || 'Never scanned.'; }
+    if ($('kvStatus')) { $('kvStatus').textContent = cfg.LastScanStatus || 'Never scanned.'; }
+    if ($('kvSummary')) { $('kvSummary').textContent = cfg.LastScanSummary || '—'; }
     if ($('kvType')) { $('kvType').textContent = cfg.LastScanType || '—'; }
     if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
     if ($('kvSkipped')) { $('kvSkipped').textContent = cfg.LastScanSkipped == null ? '—' : cfg.LastScanSkipped; }
@@ -731,6 +906,7 @@
       if ($('delimiters')) { $('delimiters').value = cfg.Delimiters || '/|;:'; }
       renderManage();
       renderScanSummary();
+      loadInfo();
       diag('config loaded');
     });
   }
@@ -746,6 +922,7 @@
       wireManage();
       wireScan();
       wireAdvanced();
+      wireData();
       diag('wiring done');
 
       if (!findToken()) {
