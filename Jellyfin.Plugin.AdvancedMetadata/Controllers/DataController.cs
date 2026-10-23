@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
 using Microsoft.AspNetCore.Authorization;
@@ -37,29 +36,22 @@ public class DataController : ControllerBase
 
     [HttpGet("Fields")]
     public ActionResult Fields()
-        => Ok(_store.FieldSummary().Select(f => new
-        {
-            f.Name,
-            f.Display,
-            f.Hierarchy,
-            f.Items,
-            f.Values
-        }));
+        => Ok(_store.FieldSummary().Select(f => new { f.Name, f.Display, f.Hierarchy, f.Items, f.Values }));
 
     [HttpGet("Values")]
-    public ActionResult Values([FromQuery] string field, [FromQuery] string? q, [FromQuery] int limit = 300)
-        => Ok(_store.BrowseField(field, q, Math.Clamp(limit, 1, 2000))
-            .Select(v => new { v.Kind, v.Item, v.Field, v.Value }));
+    public ActionResult Values([FromQuery] string? field, [FromQuery] string? q,
+                               [FromQuery] int limit = 300, [FromQuery] int offset = 0)
+        => Ok(_store.BrowseField(field ?? string.Empty, q, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
+            .Select(v => new { v.Id, v.Kind, v.Item, v.Detail, v.Field, v.Value }));
 
     [HttpGet("Item")]
-    public ActionResult Item([FromQuery] string name, [FromQuery] int limit = 300)
+    public ActionResult Item([FromQuery] string name, [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
-        return Ok(_store.BrowseItem(name, Math.Clamp(limit, 1, 2000))
-            .Select(v => new { v.Kind, v.Item, v.Field, v.Value }));
+        return Ok(_store.BrowseItem(name, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
+            .Select(v => new { v.Id, v.Kind, v.Item, v.Detail, v.Field, v.Value }));
     }
 
-    /// <summary>Deletes the indexed values for one mapping. Returns how many rows were removed.</summary>
     [HttpPost("DeleteFieldValues")]
     public ActionResult DeleteFieldValues([FromQuery] string field)
     {
