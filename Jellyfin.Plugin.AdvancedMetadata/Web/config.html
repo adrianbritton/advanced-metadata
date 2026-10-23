@@ -66,6 +66,8 @@
   .am-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 10px; }
   .am-table th { text-align: left; font-size: .78em; text-transform: uppercase; letter-spacing: .05em;
                  color: #8b949e; padding: 9px 10px; border-bottom: 1px solid #30363d; }
+  .am-table th[data-sort] { cursor: pointer; user-select: none; }
+  .am-table th[data-sort]:hover { color: #e6edf3; }
   .am-table td { padding: 11px 10px; border-bottom: 1px solid #21262d; vertical-align: middle;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .am-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; color: #c9d1d9; }
@@ -89,12 +91,22 @@
   .am-sep { height: 1px; background: #21262d; margin: 32px 0 24px; max-width: 620px; }
   .am-checkrow { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
   .am-checkrow input { margin-top: 3px; }
+
+  .am-itemgroup { border: 1px solid #30363d; background: #131820; border-radius: 8px;
+                  padding: 12px 15px; margin-bottom: 12px; max-width: 900px; }
+  .am-itemhead { display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+                 border-bottom: 1px solid #21262d; padding-bottom: 8px; margin-bottom: 8px; }
+  .am-itemhead strong { font-size: 1em; }
+  .am-itemhead span { font-size: .78em; color: #8b949e; text-transform: uppercase; letter-spacing: .04em; }
+  .am-itemrow { display: flex; gap: 14px; padding: 4px 0; font-size: .92em; }
+  .am-itemrow .k { flex: 0 0 180px; color: #8b949e; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .am-itemrow .v { flex: 1; word-break: break-word; }
 </style>
 
   <div class="am-tabs" role="tablist">
     <button class="am-tab" role="tab" data-tab="create"   aria-selected="true"  onclick="amShowTab('create')">Create Mapping</button>
     <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false" onclick="amShowTab('manage')">Manage Mappings</button>
-    <button class="am-tab" role="tab" data-tab="data"     aria-selected="false" onclick="amShowTab('data')">Browse Index</button>
+    <button class="am-tab" role="tab" data-tab="data"     aria-selected="false" onclick="amShowTab('data')">Data Search</button>
     <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false" onclick="amShowTab('scan')">Scan Mappings</button>
     <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false" onclick="amShowTab('advanced')">Advanced</button>
   </div>
@@ -124,7 +136,7 @@
 
     <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="Select if the scan should index Songs only, or also populate Albums and/or Artists.">?</span>
+        <span class="am-help" title="Choose which level of your library this data is written to. Getting this wrong writes data to the wrong level, so please choose deliberately.">?</span>
         Where should this data appear?
       </div>
       <select id="newHierarchy">
@@ -134,6 +146,7 @@
         <option value="albums">Parent Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
+      <div class="am-hint">Pick the level this mapping should populate. "Songs + Parent Albums" is the usual choice.</div>
     </div>
 
     <div class="am-actions">
@@ -153,8 +166,11 @@
       <div class="am-hint">Display name defaults to the tag name. All entries use the hierarchy below.</div>
     </div>
     <div class="am-field">
-      <div class="am-label">Hierarchy for bulk entries</div>
- <select id="bulkHierarchy">
+      <div class="am-label">
+        <span class="am-help" title="Every mapping in the list above is written to this level.">?</span>
+        Hierarchy for bulk entries
+      </div>
+      <select id="bulkHierarchy">
         <option value="">— Please select —</option>
         <option value="songs">Songs only</option>
         <option value="songs_albums">Songs + Parent Albums</option>
@@ -166,6 +182,23 @@
       <button id="btnBulk" class="am-btn am-btn-primary">Create Bulk Mappings</button>
     </div>
     <div id="bulkStatus" class="am-status"></div>
+
+    <div class="am-sep"></div>
+
+    <h2>Tag delimiters</h2>
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Characters treated as separators when one tag holds more than one value.">?</span>
+        Delimiters
+      </div>
+      <input id="delimiters" type="text" />
+      <div class="am-hint">If a tag contains one of these characters, the text either side is stored as a
+      separate value. Default: / | ; :</div>
+    </div>
+    <div class="am-actions">
+      <button id="btnSaveDelims" class="am-btn">Save delimiters</button>
+    </div>
+    <div id="delimStatus" class="am-status"></div>
   </div>
 
   <!-- ============ MANAGE ============ -->
@@ -187,65 +220,75 @@
 
     <div class="am-actions" style="margin-top:26px">
       <button id="btnDeleteAll" class="am-btn">Delete All Mappings</button>
-      <button id="btnRebuild" class="am-btn">Rebuild Store</button>
     </div>
     <div class="am-hint" style="max-width:620px">
-      Deleting a mapping removes the mapping <strong>and</strong> its indexed values.
-      Deleting all mappings empties the index completely. Your audio files and Jellyfin's
-      database are never touched.
+      Deleting a mapping removes the mapping <strong>and</strong> its indexed values. Deleting all
+      mappings empties the index completely. Your audio files and Jellyfin's database are never touched.
     </div>
     <div id="manageStatus" class="am-status"></div>
   </div>
 
- <!-- ============ BROWSE INDEX ============ -->
+  <!-- ============ DATA SEARCH ============ -->
   <div class="am-panel" data-panel="data">
-    <h2>Browse Index</h2>
-    <p style="max-width:620px">
-      This is exactly what the plugin has indexed. Nothing here comes from Jellyfin — it is the
-      plugin's own data, so you can verify the scan is reading your tags correctly.
+    <h2>Data Search</h2>
+    <p style="max-width:680px">
+      This tool displays the data that has successfully been mapped from plugin scans. It is data
+      stored in the plugin's internal database and is <strong>NOT</strong> in Jellyfin's core.
     </p>
 
-    <h3>Find a track or album</h3>
+    <h3>Search by content item</h3>
     <div class="am-field">
-      <input id="dataItem" type="text" placeholder="Type part of a title, then press Enter" autocomplete="off" />
-      <div class="am-hint">Shows every indexed value for matching items, across all mappings and hierarchy levels.</div>
+      <input id="dataItem" type="text" placeholder="Type part of a title or filename, then press Enter" autocomplete="off" />
+      <div class="am-hint">Shows every indexed value for matching items, grouped by item, across all
+      mappings and levels. Use this to check one track or album.</div>
     </div>
     <div class="am-actions">
-      <button id="btnDataItem" class="am-btn am-btn-primary">Search by item</button>
+      <button id="btnDataItem" class="am-btn am-btn-primary">Search items</button>
     </div>
 
     <div class="am-sep"></div>
 
-    <h3>Browse one mapping</h3>
+    <h3>Filter data by mapping</h3>
     <div class="am-field">
       <div class="am-label">Mapping</div>
-      <select id="dataField"></select>
+      <select id="dataField"><option value="">— All mappings —</option></select>
     </div>
     <div class="am-field">
-      <input id="dataValue" type="text" placeholder="Filter by value (optional)" autocomplete="off" />
+      <div class="am-label">Value contains (optional)</div>
+      <input id="dataValue" type="text" placeholder="e.g. Warp" autocomplete="off" />
     </div>
     <div class="am-actions">
-      <button id="btnDataField" class="am-btn am-btn-primary">Show values</button>
+      <button id="btnDataField" class="am-btn am-btn-primary">Filter</button>
     </div>
 
     <div id="dataStatus" class="am-status"></div>
 
     <div class="am-sep"></div>
 
-    <h3>Results</h3>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; max-width:900px">
+      <h3 style="margin:0">Results</h3>
+      <button id="btnClearData" class="am-link">Clear results</button>
+    </div>
     <div id="dataCount" class="am-hint"></div>
-    <table class="am-table" style="margin-top:12px">
+
+    <div id="dataGrouped" style="margin-top:12px"></div>
+
+    <table class="am-table" id="dataTable" style="display:none">
       <thead>
         <tr>
-          <th style="width:40%">Item</th>
-          <th style="width:14%">Level</th>
-          <th style="width:20%">Mapping</th>
-          <th style="width:26%">Value</th>
+          <th style="width:32%" data-sort="Item">Item</th>
+          <th style="width:14%" data-sort="Kind">Item type</th>
+          <th style="width:20%" data-sort="Field">Mapping</th>
+          <th style="width:34%" data-sort="Value">Value</th>
         </tr>
       </thead>
       <tbody id="dataRows"></tbody>
     </table>
+
     <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
+    <div class="am-actions">
+      <button id="btnMore" class="am-btn" style="display:none">Show more</button>
+    </div>
   </div>
 
   <!-- ============ SCAN ============ -->
@@ -282,7 +325,6 @@
     <h3>Last Scan</h3>
     <div class="am-card">
       <div class="am-kv"><span>Scan status</span><span id="kvStatus">—</span></div>
-      <div class="am-kv"><span>Detail</span><span id="kvSummary">—</span></div>
       <div class="am-kv"><span>Scan type</span><span id="kvType">—</span></div>
       <div class="am-kv"><span>Tracks read</span><span id="kvItems">—</span></div>
       <div class="am-kv"><span>Unchanged / skipped</span><span id="kvSkipped">—</span></div>
@@ -296,10 +338,13 @@
   <!-- ============ ADVANCED ============ -->
   <div class="am-panel" data-panel="advanced">
     <h2>Advanced</h2>
+    <p style="max-width:680px">
+      For advanced users. Take a full backup before making changes on this page.
+    </p>
 
     <h3>Store</h3>
     <div class="am-card">
-     <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
+      <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
       <div class="am-kv"><span>Schema version</span><span id="kvSchema">—</span></div>
       <div class="am-kv"><span>Mappings</span><span id="kvMappingCount">—</span></div>
       <div class="am-kv"><span>Indexed items</span><span id="kvItemCount">—</span></div>
@@ -307,29 +352,21 @@
       <div class="am-kv"><span>Index size</span><span id="kvSize">—</span></div>
     </div>
 
-    <h3>Tag delimiters</h3>
-    <div class="am-field">
-      <div class="am-label">
-        <span class="am-help" title="Characters that split a multi-value tag into separate values.">?</span>
-        Delimiters
-      </div>
-      <input id="delimiters" type="text" />
-      <div class="am-hint">Default: / | ; : &nbsp;— these characters are treated as separators when a
-      tag holds more than one value.</div>
-    </div>
-
     <div class="am-actions">
-      <button id="btnSaveAdvanced" class="am-btn am-btn-primary">Save Settings</button>
-      <button id="btnRebuild2" class="am-btn">Rebuild Store</button>
+      <button id="btnRebuild" class="am-btn">Rebuild Store</button>
+    </div>
+    <div class="am-hint" style="max-width:620px">
+      Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
     </div>
     <div id="advancedStatus" class="am-status"></div>
 
     <div class="am-sep"></div>
 
     <h3>Backups</h3>
-    <div class="am-hint" style="max-width:620px">
-      Plugin data lives in <span class="am-mono">/volume1/@appdata/jellyfin/data/plugins</span>.
-      Include that folder in your NAS backups. Take a full backup before using this page.
+    <div class="am-hint" style="max-width:680px">
+      Plugin data lives alongside the plugin on the server — on a Synology NAS that is typically
+      <span class="am-mono">/volume1/@appdata/jellyfin/data/plugins</span>. The exact path is shown
+      above. Include that folder in your NAS backups.<br /><br />
       Download and restore tools are coming in the next release.
     </div>
   </div>
@@ -340,6 +377,8 @@
 
   var PLUGIN_NAME = 'Advanced Metadata';
   var TASK_KEY = 'AdvancedMetadataScan';
+  var PAGE_SIZE = 300;
+
   var cfg = null;
   var task = null;
   var scanRunning = false;
@@ -347,12 +386,20 @@
   var idCache = null;
   var unhidInfo = '';
 
+  var dataMode = 'field';
+  var dataOffset = 0;
+  var dataRowsAll = [];
+  var sortKey = 'Item';
+  var sortAsc = true;
+
   var HIER = {
     songs: 'Songs only',
     songs_albums: 'Songs + Parent Albums',
     albums: 'Parent Albums only',
     songs_albums_artists: 'Songs + Albums + Artists'
   };
+
+  var KIND_LABEL = { Audio: 'Track', MusicAlbum: 'Album', MusicArtist: 'Artist' };
 
   function $(id) { return document.getElementById(id); }
 
@@ -445,7 +492,7 @@
     if (t) {
       h['X-Emby-Token'] = t;
       h['Authorization'] = 'MediaBrowser Token="' + t
-        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.6"';
+        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.8"';
     }
     if (json) { h['Content-Type'] = 'application/json'; }
     return h;
@@ -522,91 +569,22 @@
     return isNaN(d.getTime()) ? '—' : d.toLocaleString();
   }
 
-function disableLinks(off) {
-    Array.prototype.forEach.call(document.querySelectorAll('.am-link'), function (b) {
-      b.disabled = off;
-      b.style.opacity = off ? '.45' : '';
-    });
-  }
-
-  function refreshDataFields() {
-    var sel = $('dataField');
-    if (!sel) { return; }
-    apiGet('AdvancedMetadataData/Fields').then(function (list) {
-      sel.innerHTML = '';
-      (list || []).forEach(function (f) {
-        var o = document.createElement('option');
-        o.value = f.Name || f.name;
-        var n = (f.Items != null ? f.Items : 0);
-        var v = (f.Values != null ? f.Values : 0);
-        o.textContent = (f.Display || f.Name) + '  —  ' + v + ' values on ' + n + ' items';
-        sel.appendChild(o);
-      });
-    }).catch(function () { /* ignore */ });
-  }
-
-  function renderData(rows) {
-    var body = $('dataRows');
-    body.innerHTML = '';
-    rows = rows || [];
-    $('dataEmpty').style.display = rows.length ? 'none' : 'block';
-    $('dataCount').textContent = rows.length ? rows.length + ' row(s) shown (max 300)' : '';
-    rows.forEach(function (r) {
-      var tr = document.createElement('tr');
-      var a = document.createElement('td'); a.textContent = r.Item || r.item; a.title = a.textContent; tr.appendChild(a);
-      var b = document.createElement('td'); b.textContent = r.Kind || r.kind; tr.appendChild(b);
-      var c = document.createElement('td'); c.className = 'am-mono'; c.textContent = r.Field || r.field; tr.appendChild(c);
-      var d = document.createElement('td'); d.textContent = r.Value || r.value; d.title = d.textContent; tr.appendChild(d);
-      body.appendChild(tr);
-    });
-  }
-
-  function loadInfo() {
-    apiGet('AdvancedMetadataData/Info').then(function (i) {
-      if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || i.storePath || '—'; }
-      if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || i.schema || '—'; }
-      if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
-      if ($('kvValueCount')) { $('kvValueCount').textContent = i.Values != null ? i.Values : '—'; }
-      if ($('kvSize')) {
-        var s = i.SizeBytes != null ? i.SizeBytes : (i.sizeBytes != null ? i.sizeBytes : -1);
-        $('kvSize').textContent = s > 0 ? (Math.round(s / 1024) + ' KB') : '—';
-      }
-    }).catch(function () { /* ignore */ });
-  }
-
-  function wireData() {
-    $('btnDataItem').addEventListener('click', function () {
-      var n = $('dataItem').value.trim();
-      if (!n) { setStatus('dataStatus', 'warn', 'Type part of a title first.'); return; }
-      apiGet('AdvancedMetadataData/Item?name=' + encodeURIComponent(n))
-        .then(function (rows) { renderData(rows); setStatus('dataStatus', 'info', 'Search complete.'); })
-        .catch(function (e) { setStatus('dataStatus', 'err', 'Search failed: ' + e.message); });
-    });
-
-    $('dataItem').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { $('btnDataItem').click(); }
-    });
-
-    $('btnDataField').addEventListener('click', function () {
-      var f = $('dataField').value;
-      if (!f) { setStatus('dataStatus', 'warn', 'No mapping selected.'); return; }
-      var v = $('dataValue').value.trim();
-      apiGet('AdvancedMetadataData/Values?field=' + encodeURIComponent(f)
-        + '&q=' + encodeURIComponent(v))
-        .then(function (rows) { renderData(rows); setStatus('dataStatus', 'info', 'Search complete.'); })
-        .catch(function (e) { setStatus('dataStatus', 'err', 'Search failed: ' + e.message); });
-    });
-  }
-  
   function diag(extra) {
     var el = $('amDiag');
     if (!el) { return; }
     var t = findToken();
-    el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source + ' (' + t.length + ' chars)' : 'NOT FOUND')
+    el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source : 'NOT FOUND')
       + ' &nbsp;·&nbsp; <b>ApiClient:</b> ' + (client() ? 'present' : 'absent')
       + ' &nbsp;·&nbsp; <b>pluginId:</b> ' + (idCache ? idCache.substring(0, 8) + '…' : 'resolving')
       + ' &nbsp;·&nbsp; <b>unhid:</b> ' + (unhidInfo || '—')
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
+  }
+
+  function disableLinks(off) {
+    Array.prototype.forEach.call(document.querySelectorAll('.am-link'), function (b) {
+      b.disabled = off;
+      b.style.opacity = off ? '.45' : '';
+    });
   }
 
   function unhideAncestors() {
@@ -618,12 +596,28 @@ function disableLinks(off) {
       var cs = null;
       try { cs = window.getComputedStyle(n); } catch (e) { cs = null; }
       if (cs) {
-        if (cs.display === 'none') { n.style.display = 'block'; notes.push('display:' + (n.id || n.className || n.tagName)); }
-        if (cs.visibility === 'hidden') { n.style.visibility = 'visible'; notes.push('visibility:' + (n.id || n.className || n.tagName)); }
+        if (cs.display === 'none') { n.style.display = 'block'; notes.push('display:' + (n.id || n.tagName)); }
+        if (cs.visibility === 'hidden') { n.style.visibility = 'visible'; notes.push('visibility:' + (n.id || n.tagName)); }
       }
       n = n.parentElement;
     }
     return notes;
+  }
+
+  /* Show only while the plugin page route is active, so it does not bleed through other pages. */
+  function routeVisible() {
+    var h = window.location.hash || '';
+    var p = window.location.pathname || '';
+    if (h.indexOf('configurationpage') > -1) { return true; }
+    if (p.indexOf('configurationpage') > -1) { return true; }
+    if (!h && p.indexOf('/web/') === -1) { return true; }
+    return false;
+  }
+
+  function watchRoute() {
+    var el = $('AdvancedMetadataConfigPage');
+    if (!el) { return; }
+    el.style.setProperty('display', routeVisible() ? 'block' : 'none', 'important');
   }
 
   /* ---------------- tabs ---------------- */
@@ -664,7 +658,7 @@ function disableLinks(off) {
       var display = $('newDisplay').value.trim();
       var hier = $('newHierarchy').value;
 
-    if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
+      if (!tag) { setStatus('createStatus', 'err', 'Enter a tag name.'); return; }
       if (!hier) { setStatus('createStatus', 'err', 'Please select what hierarchy this mapping should inherit.'); return; }
       if (duplicate(tag)) { setStatus('createStatus', 'err', 'Mapping name ' + tag.toUpperCase() + ' already exists.'); return; }
 
@@ -677,7 +671,7 @@ function disableLinks(off) {
       saveConfig(cfg).then(function () {
         setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
         $('newTag').value = ''; $('newDisplay').value = '';
-        renderManage();
+        renderManage(); refreshDataFields();
       }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
@@ -691,7 +685,7 @@ function disableLinks(off) {
         setStatus('bulkStatus', 'ok', tags.length + ' new mapping(s) ready to create.');
       }
     });
-    
+
     $('btnBulk').addEventListener('click', function () {
       var tags = $('bulkTags').value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
       var hier = $('bulkHierarchy').value;
@@ -716,8 +710,14 @@ function disableLinks(off) {
       saveConfig(cfg).then(function () {
         setStatus('bulkStatus', 'ok', added + ' mapping(s) created.');
         $('bulkTags').value = '';
-        renderManage();
+        renderManage(); refreshDataFields();
       }).catch(function (e) { setStatus('bulkStatus', 'err', 'SAVE FAILED: ' + e.message); });
+    });
+
+    $('btnSaveDelims').addEventListener('click', function () {
+      cfg.Delimiters = $('delimiters').value;
+      saveConfig(cfg).then(function () { setStatus('delimStatus', 'ok', 'Delimiters saved.'); })
+        .catch(function (e) { setStatus('delimStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
   }
 
@@ -754,17 +754,16 @@ function disableLinks(off) {
       del.className = 'am-link am-link-danger';
       del.textContent = 'Delete';
       del.addEventListener('click', function () {
-       if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
+        if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
             + m.SourceTag + '" from the plugin index. Your audio files and Jellyfin are not touched. Continue?')) { return; }
         apiPost('AdvancedMetadataData/DeleteFieldValues?field=' + encodeURIComponent(m.SourceTag))
           .then(function (r) {
             var removed = 0;
-            try { removed = JSON.parse(r).Removed || JSON.parse(r).removed || 0; } catch (e) { removed = 0; }
+            try { var j = JSON.parse(r); removed = j.Removed != null ? j.Removed : (j.removed || 0); } catch (e) { removed = 0; }
             cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
             return saveConfig(cfg).then(function () {
-              renderManage();
-              setStatus('manageStatus', 'ok',
-                'Mapping removed and ' + removed + ' indexed value(s) deleted from the index.');
+              renderManage(); refreshDataFields();
+              setStatus('manageStatus', 'ok', 'Mapping removed and ' + removed + ' indexed value(s) deleted.');
               loadInfo();
             });
           })
@@ -779,30 +778,173 @@ function disableLinks(off) {
   function wireManage() {
     $('btnDeleteAll').addEventListener('click', function () {
       if (!(cfg.Mappings || []).length) { setStatus('manageStatus', 'warn', 'No mappings to delete.'); return; }
-     if (!window.confirm('WARNING: This removes EVERY mapping AND empties the entire plugin index. '
+      if (!window.confirm('WARNING: This removes EVERY mapping AND empties the entire plugin index. '
           + 'Your audio files and Jellyfin are not touched. Continue?')) { return; }
-      apiPost('AdvancedMetadataData/ClearAll')
-        .then(function () {
-          cfg.Mappings = [];
-          return saveConfig(cfg).then(function () {
-            renderManage();
-            setStatus('manageStatus', 'ok', 'All mappings deleted and the index emptied.');
-            loadInfo();
-          });
-        })
-        .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
+      apiPost('AdvancedMetadataData/ClearAll').then(function () {
+        cfg.Mappings = [];
+        return saveConfig(cfg).then(function () {
+          renderManage(); refreshDataFields();
+          setStatus('manageStatus', 'ok', 'All mappings deleted and the index emptied.');
+          loadInfo();
+        });
+      }).catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
+    });
+  }
+
+  /* ---------------- data search ---------------- */
+
+  function refreshDataFields() {
+    var sel = $('dataField');
+    if (!sel) { return; }
+    var keep = sel.value;
+    apiGet('AdvancedMetadataData/Fields').then(function (list) {
+      sel.innerHTML = '<option value="">— All mappings —</option>';
+      (list || []).forEach(function (f) {
+        var o = document.createElement('option');
+        o.value = f.Name || f.name;
+        var n = (f.Items != null ? f.Items : 0);
+        var v = (f.Values != null ? f.Values : 0);
+        o.textContent = (f.Display || f.Name) + '  —  ' + v + ' values on ' + n + ' items';
+        sel.appendChild(o);
+      });
+      sel.value = keep;
+    }).catch(function () { /* ignore */ });
+  }
+
+  function clearDataResults() {
+    dataRowsAll = [];
+    dataOffset = 0;
+    $('dataRows').innerHTML = '';
+    $('dataGrouped').innerHTML = '';
+    $('dataTable').style.display = 'none';
+    $('dataEmpty').style.display = 'block';
+    $('dataCount').textContent = '';
+    $('btnMore').style.display = 'none';
+    clearStatus('dataStatus');
+  }
+
+  function renderFlat(rows, append) {
+    var body = $('dataRows');
+    if (!append) { body.innerHTML = ''; }
+    $('dataTable').style.display = 'block';
+    $('dataGrouped').innerHTML = '';
+    $('dataEmpty').style.display = rows.length ? 'none' : 'block';
+
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      var a = document.createElement('td'); a.textContent = r.Item; a.title = r.Detail || r.Item; tr.appendChild(a);
+      var b = document.createElement('td'); b.textContent = KIND_LABEL[r.Kind] || r.Kind; tr.appendChild(b);
+      var c = document.createElement('td'); c.className = 'am-mono'; c.textContent = r.Field; tr.appendChild(c);
+      var d = document.createElement('td'); d.textContent = r.Value; d.title = r.Value; tr.appendChild(d);
+      body.appendChild(tr);
+    });
+  }
+
+  function sortRows(rows) {
+    var k = sortKey;
+    return rows.slice().sort(function (x, y) {
+      var a = String(x[k] == null ? '' : x[k]).toLowerCase();
+      var b = String(y[k] == null ? '' : y[k]).toLowerCase();
+      if (a < b) { return sortAsc ? -1 : 1; }
+      if (a > b) { return sortAsc ? 1 : -1; }
+      return 0;
+    });
+  }
+
+  function renderGrouped(rows) {
+    var wrap = $('dataGrouped');
+    wrap.innerHTML = '';
+    $('dataTable').style.display = 'none';
+    $('dataEmpty').style.display = rows.length ? 'none' : 'block';
+
+    var groups = {};
+    var order = [];
+    rows.forEach(function (r) {
+      var key = r.Kind + '|' + r.Item;
+      if (!groups[key]) { groups[key] = { kind: r.Kind, item: r.Item, detail: r.Detail, vals: [] }; order.push(key); }
+      groups[key].vals.push(r);
     });
 
-   var rebuild = function () {
-      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
-          + 'You must run a scan afterwards. Continue?')) { return; }
-      apiPost('AdvancedMetadataData/ClearAll').then(function () {
-        setStatus('manageStatus', 'ok', 'Index cleared. Run a scan to rebuild it.');
-        loadInfo();
-      }).catch(function (e) { setStatus('manageStatus', 'err', 'REBUILD FAILED: ' + e.message); });
-    };
-    $('btnRebuild').addEventListener('click', rebuild);
-    if ($('btnRebuild2')) { $('btnRebuild2').addEventListener('click', rebuild); }
+    order.forEach(function (key) {
+      var g = groups[key];
+      var card = document.createElement('div');
+      card.className = 'am-itemgroup';
+
+      var head = document.createElement('div');
+      head.className = 'am-itemhead';
+      var t = document.createElement('strong');
+      t.textContent = g.item;
+      t.title = g.detail || g.item;
+      var k = document.createElement('span');
+      k.textContent = KIND_LABEL[g.kind] || g.kind;
+      head.appendChild(t); head.appendChild(k);
+      card.appendChild(head);
+
+      g.vals.forEach(function (v) {
+        var row = document.createElement('div');
+        row.className = 'am-itemrow';
+        var kk = document.createElement('div'); kk.className = 'k'; kk.textContent = v.Field;
+        var vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v.Value;
+        row.appendChild(kk); row.appendChild(vv);
+        card.appendChild(row);
+      });
+
+      wrap.appendChild(card);
+    });
+  }
+
+  function updateMoreButton(fetched) {
+    $('btnMore').style.display = (fetched >= PAGE_SIZE) ? 'inline-block' : 'none';
+  }
+
+  function loadData(append) {
+    var url;
+    if (dataMode === 'item') {
+      var n = $('dataItem').value.trim();
+      if (!n) { setStatus('dataStatus', 'warn', 'Type part of a title first.'); return; }
+      url = 'AdvancedMetadataData/Item?name=' + encodeURIComponent(n);
+    } else {
+      url = 'AdvancedMetadataData/Values?field=' + encodeURIComponent($('dataField').value)
+          + '&q=' + encodeURIComponent($('dataValue').value.trim());
+    }
+    url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
+
+    apiGet(url).then(function (rows) {
+      rows = rows || [];
+      if (append) { dataRowsAll = dataRowsAll.concat(rows); } else { dataRowsAll = rows; }
+      dataOffset = dataRowsAll.length;
+
+      if (dataMode === 'item') { renderGrouped(dataRowsAll); }
+      else { renderFlat(sortRows(dataRowsAll), false); }
+
+      $('dataCount').textContent = dataRowsAll.length + ' row(s) shown'
+        + (rows.length >= PAGE_SIZE ? ' — more available' : '');
+      updateMoreButton(rows.length);
+      setStatus('dataStatus', 'info', dataRowsAll.length + ' result(s) found.');
+    }).catch(function (e) {
+      setStatus('dataStatus', 'err', 'Search failed: ' + e.message);
+    });
+  }
+
+  function wireData() {
+    $('btnDataItem').addEventListener('click', function () { dataMode = 'item'; loadData(false); });
+    $('dataItem').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataItem').click(); } });
+    $('btnDataField').addEventListener('click', function () { dataMode = 'field'; loadData(false); });
+    $('dataValue').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataField').click(); } });
+    $('btnMore').addEventListener('click', function () { loadData(true); });
+    $('btnClearData').addEventListener('click', clearDataResults);
+
+    Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-sort');
+        if (sortKey === k) { sortAsc = !sortAsc; } else { sortKey = k; sortAsc = true; }
+        Array.prototype.forEach.call(document.querySelectorAll('#dataTable th'), function (h) {
+          h.textContent = h.textContent.replace(/ [▲▼]$/, '');
+        });
+        th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (sortAsc ? ' ▲' : ' ▼');
+        renderFlat(sortRows(dataRowsAll), false);
+      });
+    });
   }
 
   /* ---------------- scan ---------------- */
@@ -842,13 +984,11 @@ function disableLinks(off) {
     $('btnBulk').disabled = running;
     $('btnDeleteAll').disabled = running;
     $('btnRebuild').disabled = running;
-    if ($('btnRebuild2')) { $('btnRebuild2').disabled = running; }
     disableLinks(running);
   }
 
   function renderScanSummary() {
     if ($('kvStatus')) { $('kvStatus').textContent = cfg.LastScanStatus || 'Never scanned.'; }
-    if ($('kvSummary')) { $('kvSummary').textContent = cfg.LastScanSummary || '—'; }
     if ($('kvType')) { $('kvType').textContent = cfg.LastScanType || '—'; }
     if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
     if ($('kvSkipped')) { $('kvSkipped').textContent = cfg.LastScanSkipped == null ? '—' : cfg.LastScanSkipped; }
@@ -856,7 +996,6 @@ function disableLinks(off) {
     if ($('kvErrors')) { $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors; }
     if ($('kvStarted')) { $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc); }
     if ($('kvFinished')) { $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc); }
-    if ($('kvStorePath')) { $('kvStorePath').textContent = cfg.StorePath || '(set on first run)'; }
   }
 
   function refreshTask() {
@@ -889,11 +1028,27 @@ function disableLinks(off) {
 
   /* ---------------- advanced ---------------- */
 
+  function loadInfo() {
+    apiGet('AdvancedMetadataData/Info').then(function (i) {
+      if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || '—'; }
+      if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || '—'; }
+      if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
+      if ($('kvValueCount')) { $('kvValueCount').textContent = i.Values != null ? i.Values : '—'; }
+      if ($('kvSize')) {
+        var s = i.SizeBytes != null ? i.SizeBytes : -1;
+        $('kvSize').textContent = s > 0 ? (Math.round(s / 1024) + ' KB') : '—';
+      }
+    }).catch(function () { /* ignore */ });
+  }
+
   function wireAdvanced() {
-    $('btnSaveAdvanced').addEventListener('click', function () {
-      cfg.Delimiters = $('delimiters').value;
-      saveConfig(cfg).then(function () { setStatus('advancedStatus', 'ok', 'Settings saved.'); })
-        .catch(function (e) { setStatus('advancedStatus', 'err', 'SAVE FAILED: ' + e.message); });
+    $('btnRebuild').addEventListener('click', function () {
+      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
+          + 'You must run a scan afterwards. Continue?')) { return; }
+      apiPost('AdvancedMetadataData/ClearAll').then(function () {
+        setStatus('advancedStatus', 'ok', 'Index cleared. Run a scan to rebuild it.');
+        loadInfo();
+      }).catch(function (e) { setStatus('advancedStatus', 'err', 'REBUILD FAILED: ' + e.message); });
     });
   }
 
@@ -907,6 +1062,7 @@ function disableLinks(off) {
       renderManage();
       renderScanSummary();
       loadInfo();
+      refreshDataFields();
       diag('config loaded');
     });
   }
@@ -920,10 +1076,14 @@ function disableLinks(off) {
 
       wireCreate();
       wireManage();
+      wireData();
       wireScan();
       wireAdvanced();
-      wireData();
+      watchRoute();
       diag('wiring done');
+
+      window.addEventListener('hashchange', watchRoute);
+      window.addEventListener('popstate', watchRoute);
 
       if (!findToken()) {
         setStatus('createStatus', 'warn',
@@ -933,6 +1093,7 @@ function disableLinks(off) {
       loadConfig().then(function () {
         refreshTask();
         setInterval(function () {
+          watchRoute();
           refreshTask();
           if (scanRunning) { loadConfig().then(renderScanState); }
         }, 2500);
