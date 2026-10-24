@@ -71,6 +71,7 @@ jobs:
               "overview": "Reads audio tags into a local index. Jellyfin is never modified.",
               "owner": "audioadge",
               "category": "Metadata",
+              "imageUrl": "https://raw.githubusercontent.com/audioadge/advanced-metadata/main/Jellyfin.Plugin.AdvancedMetadata/thumb.png",
               "versions": [
                 {
                   "version": "${VERSION}",
