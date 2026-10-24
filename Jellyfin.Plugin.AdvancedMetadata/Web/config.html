@@ -101,6 +101,10 @@
   .am-itemrow { display: flex; gap: 14px; padding: 4px 0; font-size: .92em; }
   .am-itemrow .k { flex: 0 0 180px; color: #8b949e; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .am-itemrow .v { flex: 1; word-break: break-word; }
+
+  .am-inline { padding: 7px 10px; background: #0a0d12; color: #e6edf3;
+               border: 1px solid #30363d; border-radius: 6px; max-width: 260px;
+               font-family: inherit; font-size: 14px; }
 </style>
 
   <div class="am-tabs" role="tablist">
@@ -184,7 +188,7 @@
     </div>
     <div id="bulkStatus" class="am-status"></div>
 
-<div class="am-sep"></div>
+    <div class="am-sep"></div>
 
     <div class="am-card">
       <strong>Tag Delimiters</strong>
@@ -194,6 +198,7 @@
         Users with custom delimiters can change them on the <strong>Advanced</strong> tab.
       </div>
     </div>
+  </div>
 
   <!-- ============ MANAGE ============ -->
   <div class="am-panel" data-panel="manage">
@@ -232,9 +237,9 @@
 
     <h3>Search by content item</h3>
     <div class="am-field">
-      <input id="dataItem" type="text" placeholder="Type part of a title or filename, then press Enter" autocomplete="off" />
-      <div class="am-hint">Shows every indexed value for matching items, grouped by item, across all
-      mappings and levels. Use this to check one track or album.</div>
+      <input id="dataItem" type="text" placeholder="Type part of an artist, title or filename, then press Enter" autocomplete="off" />
+      <div class="am-hint">Multiple words are matched together, so "Artist Album" works. Results are
+      grouped by item and show every indexed value across all mappings and levels.</div>
     </div>
     <div class="am-actions">
       <button id="btnDataItem" class="am-btn am-btn-primary">Search items</button>
@@ -263,16 +268,14 @@
       <h3 style="margin:0">Results</h3>
       <button id="btnClearData" class="am-link">Clear results</button>
     </div>
- <div id="dataCount" class="am-hint"></div>
+    <div id="dataCount" class="am-hint"></div>
 
     <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px">
       <label class="am-checkrow" style="font-size:.9em">
         <input id="chkGrouped" type="checkbox" />
         <span>Display grouped results</span>
       </label>
-      <input id="dataFilter" type="text" placeholder="Filter these results…"
-             style="max-width:260px; padding:7px 10px; background:#0a0d12; color:#e6edf3;
-                    border:1px solid #30363d; border-radius:6px" autocomplete="off" />
+      <input id="dataFilter" type="text" class="am-inline" placeholder="Filter these results…" autocomplete="off" />
     </div>
 
     <div id="dataGrouped" style="margin-top:12px"></div>
@@ -289,6 +292,7 @@
       </thead>
       <tbody id="dataRows"></tbody>
     </table>
+
     <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
     <div class="am-actions">
       <button id="btnMore" class="am-btn" style="display:none">Show more</button>
@@ -355,8 +359,9 @@
       <div class="am-kv"><span>Indexed values</span><span id="kvValueCount">—</span></div>
       <div class="am-kv"><span>Index size</span><span id="kvSize">—</span></div>
     </div>
+    <div id="sizeWarning" class="am-status warn" style="max-width:680px"></div>
 
-<h3>Tag Delimiters</h3>
+    <h3>Tag Delimiters</h3>
     <div class="am-field">
       <div class="am-label">
         <span class="am-help" title="Characters treated as separators when one tag holds more than one value.">?</span>
@@ -377,7 +382,6 @@
     <div class="am-actions">
       <button id="btnRebuild" class="am-btn">Rebuild Store</button>
     </div>
-    
     <div class="am-hint" style="max-width:620px">
       Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
     </div>
@@ -412,7 +416,7 @@
   var dataMode = 'field';
   var dataOffset = 0;
   var dataRowsAll = [];
-  var sortKey = 'Item';
+  var sortKey = 'Artist';
   var sortAsc = true;
 
   var HIER = {
@@ -515,7 +519,7 @@
     if (t) {
       h['X-Emby-Token'] = t;
       h['Authorization'] = 'MediaBrowser Token="' + t
-        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.8"';
+        + '", Client="Advanced Metadata", Device="Web", DeviceId="advmeta-web", Version="0.2.11"';
     }
     if (json) { h['Content-Type'] = 'application/json'; }
     return h;
@@ -599,7 +603,6 @@
     el.innerHTML = '<b>auth:</b> ' + (t ? 'found via ' + tokenInfo.source : 'NOT FOUND')
       + ' &nbsp;·&nbsp; <b>ApiClient:</b> ' + (client() ? 'present' : 'absent')
       + ' &nbsp;·&nbsp; <b>pluginId:</b> ' + (idCache ? idCache.substring(0, 8) + '…' : 'resolving')
-      + ' &nbsp;·&nbsp; <b>unhid:</b> ' + (unhidInfo || '—')
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
   }
 
@@ -612,22 +615,20 @@
 
   function unhideAncestors() {
     var n = $('AdvancedMetadataConfigPage');
-    var notes = [];
     var steps = 0;
     while (n && n !== document.body && steps < 40) {
       steps++;
       var cs = null;
       try { cs = window.getComputedStyle(n); } catch (e) { cs = null; }
       if (cs) {
-        if (cs.display === 'none') { n.style.display = 'block'; notes.push('display:' + (n.id || n.tagName)); }
-        if (cs.visibility === 'hidden') { n.style.visibility = 'visible'; notes.push('visibility:' + (n.id || n.tagName)); }
+        if (cs.display === 'none') { n.style.display = 'block'; }
+        if (cs.visibility === 'hidden') { n.style.visibility = 'visible'; }
       }
       n = n.parentElement;
     }
-    return notes;
+    return [];
   }
 
-  /* Show only while the plugin page route is active, so it does not bleed through other pages. */
   function routeVisible() {
     var h = window.location.hash || '';
     var p = window.location.pathname || '';
@@ -637,7 +638,6 @@
     return false;
   }
 
-/* Hide immediately on any navigation click, before the new page renders. */
   function onNavClick(e) {
     var el = e.target;
     while (el && el !== document.body && el.tagName !== 'A') { el = el.parentElement; }
@@ -647,7 +647,7 @@
     var box = $('AdvancedMetadataConfigPage');
     if (box) { box.style.setProperty('display', 'none', 'important'); }
   }
-  
+
   function watchRoute() {
     var el = $('AdvancedMetadataConfigPage');
     if (!el) { return; }
@@ -845,7 +845,7 @@
     }).catch(function () { /* ignore */ });
   }
 
-function clearDataResults() {
+  function clearDataResults() {
     dataRowsAll = [];
     dataOffset = 0;
     if ($('dataFilter')) { $('dataFilter').value = ''; }
@@ -859,7 +859,7 @@ function clearDataResults() {
     clearStatus('dataStatus');
   }
 
-function currentFilter() {
+  function currentFilter() {
     var f = $('dataFilter');
     return (f ? f.value : '').trim().toLowerCase();
   }
@@ -912,7 +912,10 @@ function currentFilter() {
     var order = [];
     rows.forEach(function (r) {
       var key = r.Kind + '|' + (r.Artist || '') + '|' + r.Item;
-      if (!groups[key]) { groups[key] = { kind: r.Kind, item: r.Item, artist: r.Artist, detail: r.Detail, vals: [] }; order.push(key); }
+      if (!groups[key]) {
+        groups[key] = { kind: r.Kind, item: r.Item, artist: r.Artist, detail: r.Detail, vals: [] };
+        order.push(key);
+      }
       groups[key].vals.push(r);
     });
 
@@ -1086,9 +1089,20 @@ function currentFilter() {
       if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || '—'; }
       if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
       if ($('kvValueCount')) { $('kvValueCount').textContent = i.Values != null ? i.Values : '—'; }
-      if ($('kvSize')) {
-        var s = i.SizeBytes != null ? i.SizeBytes : -1;
-        $('kvSize').textContent = s > 0 ? (Math.round(s / 1024) + ' KB') : '—';
+      var s = i.SizeBytes != null ? i.SizeBytes : -1;
+      if ($('kvSize')) { $('kvSize').textContent = s > 0 ? (Math.round(s / 1024) + ' KB') : '—'; }
+
+      var warn = $('sizeWarning');
+      if (warn) {
+        var msgs = [];
+        if (i.Values > 250000) { msgs.push('The index holds over 250,000 values.'); }
+        if (s > 100 * 1024 * 1024) { msgs.push('The index file is over 100 MB.'); }
+        if (msgs.length) {
+          warn.className = 'am-status warn show';
+          warn.textContent = msgs.join(' ') + ' Searches remain fast, but consider trimming mappings you no longer use.';
+        } else {
+          warn.className = 'am-status';
+        }
       }
     }).catch(function () { /* ignore */ });
   }
@@ -1123,8 +1137,8 @@ function currentFilter() {
     try {
       if (!$('AdvancedMetadataConfigPage')) { setTimeout(init, 200); return; }
 
-      var fixed = unhideAncestors();
-      unhidInfo = fixed.length ? fixed.join(' | ') : 'none needed';
+      unhideAncestors();
+      unhidInfo = 'ok';
 
       wireCreate();
       wireManage();
@@ -1134,7 +1148,7 @@ function currentFilter() {
       watchRoute();
       diag('wiring done');
 
-  document.addEventListener('click', onNavClick, true);
+      document.addEventListener('click', onNavClick, true);
       window.addEventListener('hashchange', watchRoute);
       window.addEventListener('popstate', watchRoute);
 
