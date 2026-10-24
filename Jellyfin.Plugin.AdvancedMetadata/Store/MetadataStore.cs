@@ -58,14 +58,18 @@ public class MetadataStore
         return fn(c);
     }
 
-    private void Write(Action<SqliteConnection> fn)
+    private T Write<T>(Func<SqliteConnection, T> fn)
     {
-        if (_shared is not null) { fn(_shared); return; }
+        if (_shared is not null) { return fn(_shared); }
         using var c = NewConn();
         using var tx = c.BeginTransaction();
-        fn(c);
+        var result = fn(c);
         tx.Commit();
+        return result;
     }
+
+    private void Write(Action<SqliteConnection> fn)
+        => Write<object?>(c => { fn(c); return null; });
 
     /// <summary>Opens one connection + transaction for a whole scan.</summary>
     public void BeginBatch()
@@ -345,9 +349,9 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         return removed;
     }
 
-    public void ClearAll()
+   public void ClearAll()
     {
-        Write(c => Exec(c, "DELETE FROM vals; DELETE FROM items;"));
+        Write(c => { Exec(c, "DELETE FROM vals; DELETE FROM items;"); });
         _fieldIds.Clear();
     }
 
