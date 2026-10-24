@@ -162,13 +162,13 @@
         <span class="am-help" title="Comma-separated list of tag names for bulk mapping, e.g. COMPOSER, LABEL, STYLE.">?</span>
         Comma-separated list of tag names
       </div>
-      <input id="bulkTags" type="text" placeholder="e.g. CATALOGNUMBER, OWNER, OWNEDMEDIA" autocomplete="off" />
+      <input id="bulkTags" type="text" placeholder="e.g. COMPOSER, LABEL, STYLE" autocomplete="off" />
       <div class="am-hint">Display name defaults to the tag name. All entries use the hierarchy below.</div>
     </div>
     <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="Every mapping in the list above is written to this level.">?</span>
-        Hierarchy for bulk entries
+        <span class="am-help" title="Choose which level of your library this data is written to.">?</span>
+        Where should this data appear?
       </div>
       <select id="bulkHierarchy">
         <option value="">— Please select —</option>
@@ -177,29 +177,23 @@
         <option value="albums">Parent Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
+      <div class="am-hint">Applies to every tag in the list above.</div>
     </div>
     <div class="am-actions">
       <button id="btnBulk" class="am-btn am-btn-primary">Create Bulk Mappings</button>
     </div>
     <div id="bulkStatus" class="am-status"></div>
 
-    <div class="am-sep"></div>
+<div class="am-sep"></div>
 
-    <h2>Tag delimiters</h2>
-    <div class="am-field">
-      <div class="am-label">
-        <span class="am-help" title="Characters treated as separators when one tag holds more than one value.">?</span>
-        Delimiters
+    <div class="am-card">
+      <strong>Tag Delimiters</strong>
+      <div class="am-hint" style="margin-top:6px">
+        Mappings will inherit the default list of character delimiters of
+        <span class="am-mono">/ | ; :</span> for tags holding multiple values.
+        Users with custom delimiters can change them on the <strong>Advanced</strong> tab.
       </div>
-      <input id="delimiters" type="text" />
-      <div class="am-hint">If a tag contains one of these characters, the text either side is stored as a
-      separate value. Default: / | ; :</div>
     </div>
-    <div class="am-actions">
-      <button id="btnSaveDelims" class="am-btn">Save delimiters</button>
-    </div>
-    <div id="delimStatus" class="am-status"></div>
-  </div>
 
   <!-- ============ MANAGE ============ -->
   <div class="am-panel" data-panel="manage">
@@ -269,22 +263,32 @@
       <h3 style="margin:0">Results</h3>
       <button id="btnClearData" class="am-link">Clear results</button>
     </div>
-    <div id="dataCount" class="am-hint"></div>
+ <div id="dataCount" class="am-hint"></div>
+
+    <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px">
+      <label class="am-checkrow" style="font-size:.9em">
+        <input id="chkGrouped" type="checkbox" />
+        <span>Display grouped results</span>
+      </label>
+      <input id="dataFilter" type="text" placeholder="Filter these results…"
+             style="max-width:260px; padding:7px 10px; background:#0a0d12; color:#e6edf3;
+                    border:1px solid #30363d; border-radius:6px" autocomplete="off" />
+    </div>
 
     <div id="dataGrouped" style="margin-top:12px"></div>
 
     <table class="am-table" id="dataTable" style="display:none">
       <thead>
         <tr>
-          <th style="width:32%" data-sort="Item">Item</th>
-          <th style="width:14%" data-sort="Kind">Item type</th>
-          <th style="width:20%" data-sort="Field">Mapping</th>
-          <th style="width:34%" data-sort="Value">Value</th>
+          <th style="width:20%" data-sort="Artist">Artist</th>
+          <th style="width:24%" data-sort="Item">Item</th>
+          <th style="width:11%" data-sort="Kind">Type</th>
+          <th style="width:16%" data-sort="Field">Mapping</th>
+          <th style="width:29%" data-sort="Value">Value</th>
         </tr>
       </thead>
       <tbody id="dataRows"></tbody>
     </table>
-
     <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
     <div class="am-actions">
       <button id="btnMore" class="am-btn" style="display:none">Show more</button>
@@ -352,9 +356,28 @@
       <div class="am-kv"><span>Index size</span><span id="kvSize">—</span></div>
     </div>
 
+<h3>Tag Delimiters</h3>
+    <div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Characters treated as separators when one tag holds more than one value.">?</span>
+        Default Delimiters
+      </div>
+      <input id="delimiters" type="text" />
+      <div class="am-hint">The following default character delimiters are used when scanning for records
+      with multiple values. Users with custom delimiters can change them below. Default: / | ; :</div>
+    </div>
+    <div class="am-actions">
+      <button id="btnSaveDelims" class="am-btn">Save Delimiters</button>
+    </div>
+    <div id="delimStatus" class="am-status"></div>
+
+    <div class="am-sep"></div>
+
+    <h3>Maintenance</h3>
     <div class="am-actions">
       <button id="btnRebuild" class="am-btn">Rebuild Store</button>
     </div>
+    
     <div class="am-hint" style="max-width:620px">
       Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
     </div>
@@ -811,9 +834,11 @@
     }).catch(function () { /* ignore */ });
   }
 
-  function clearDataResults() {
+function clearDataResults() {
     dataRowsAll = [];
     dataOffset = 0;
+    if ($('dataFilter')) { $('dataFilter').value = ''; }
+    if ($('chkGrouped')) { $('chkGrouped').checked = false; }
     $('dataRows').innerHTML = '';
     $('dataGrouped').innerHTML = '';
     $('dataTable').style.display = 'none';
@@ -823,19 +848,34 @@
     clearStatus('dataStatus');
   }
 
-  function renderFlat(rows, append) {
+function currentFilter() {
+    var f = $('dataFilter');
+    return (f ? f.value : '').trim().toLowerCase();
+  }
+
+  function applyFilter(rows) {
+    var f = currentFilter();
+    if (!f) { return rows; }
+    return rows.filter(function (r) {
+      return ((r.Artist || '') + ' ' + (r.Item || '') + ' ' + (r.Kind || '') + ' '
+        + (r.Field || '') + ' ' + (r.Value || '')).toLowerCase().indexOf(f) > -1;
+    });
+  }
+
+  function renderFlat(rows) {
     var body = $('dataRows');
-    if (!append) { body.innerHTML = ''; }
+    body.innerHTML = '';
     $('dataTable').style.display = 'block';
     $('dataGrouped').innerHTML = '';
     $('dataEmpty').style.display = rows.length ? 'none' : 'block';
 
     rows.forEach(function (r) {
       var tr = document.createElement('tr');
-      var a = document.createElement('td'); a.textContent = r.Item; a.title = r.Detail || r.Item; tr.appendChild(a);
-      var b = document.createElement('td'); b.textContent = KIND_LABEL[r.Kind] || r.Kind; tr.appendChild(b);
-      var c = document.createElement('td'); c.className = 'am-mono'; c.textContent = r.Field; tr.appendChild(c);
-      var d = document.createElement('td'); d.textContent = r.Value; d.title = r.Value; tr.appendChild(d);
+      var a = document.createElement('td'); a.textContent = r.Artist || '—'; a.title = r.Artist || ''; tr.appendChild(a);
+      var b = document.createElement('td'); b.textContent = r.Item; b.title = r.Detail || r.Item; tr.appendChild(b);
+      var c = document.createElement('td'); c.textContent = KIND_LABEL[r.Kind] || r.Kind; tr.appendChild(c);
+      var d = document.createElement('td'); d.className = 'am-mono'; d.textContent = r.Field; tr.appendChild(d);
+      var e = document.createElement('td'); e.textContent = r.Value; e.title = r.Value; tr.appendChild(e);
       body.appendChild(tr);
     });
   }
@@ -860,8 +900,8 @@
     var groups = {};
     var order = [];
     rows.forEach(function (r) {
-      var key = r.Kind + '|' + r.Item;
-      if (!groups[key]) { groups[key] = { kind: r.Kind, item: r.Item, detail: r.Detail, vals: [] }; order.push(key); }
+      var key = r.Kind + '|' + (r.Artist || '') + '|' + r.Item;
+      if (!groups[key]) { groups[key] = { kind: r.Kind, item: r.Item, artist: r.Artist, detail: r.Detail, vals: [] }; order.push(key); }
       groups[key].vals.push(r);
     });
 
@@ -873,7 +913,7 @@
       var head = document.createElement('div');
       head.className = 'am-itemhead';
       var t = document.createElement('strong');
-      t.textContent = g.item;
+      t.textContent = (g.artist ? g.artist + ' — ' : '') + g.item;
       t.title = g.detail || g.item;
       var k = document.createElement('span');
       k.textContent = KIND_LABEL[g.kind] || g.kind;
@@ -893,8 +933,13 @@
     });
   }
 
-  function updateMoreButton(fetched) {
-    $('btnMore').style.display = (fetched >= PAGE_SIZE) ? 'inline-block' : 'none';
+  function redrawData() {
+    var rows = applyFilter(dataRowsAll);
+    $('dataCount').textContent = rows.length + ' row(s) shown of ' + dataRowsAll.length
+      + (dataRowsAll.length >= PAGE_SIZE ? ' — more available' : '');
+    if ($('chkGrouped').checked) { renderGrouped(rows); }
+    else { renderFlat(sortRows(rows)); }
+    $('btnMore').style.display = (dataRowsAll.length >= PAGE_SIZE) ? 'inline-block' : 'none';
   }
 
   function loadData(append) {
@@ -911,15 +956,9 @@
 
     apiGet(url).then(function (rows) {
       rows = rows || [];
-      if (append) { dataRowsAll = dataRowsAll.concat(rows); } else { dataRowsAll = rows; }
+      dataRowsAll = append ? dataRowsAll.concat(rows) : rows;
       dataOffset = dataRowsAll.length;
-
-      if (dataMode === 'item') { renderGrouped(dataRowsAll); }
-      else { renderFlat(sortRows(dataRowsAll), false); }
-
-      $('dataCount').textContent = dataRowsAll.length + ' row(s) shown'
-        + (rows.length >= PAGE_SIZE ? ' — more available' : '');
-      updateMoreButton(rows.length);
+      redrawData();
       setStatus('dataStatus', 'info', dataRowsAll.length + ' result(s) found.');
     }).catch(function (e) {
       setStatus('dataStatus', 'err', 'Search failed: ' + e.message);
@@ -927,12 +966,14 @@
   }
 
   function wireData() {
-    $('btnDataItem').addEventListener('click', function () { dataMode = 'item'; loadData(false); });
+    $('btnDataItem').addEventListener('click', function () { dataMode = 'item'; dataOffset = 0; loadData(false); });
     $('dataItem').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataItem').click(); } });
-    $('btnDataField').addEventListener('click', function () { dataMode = 'field'; loadData(false); });
+    $('btnDataField').addEventListener('click', function () { dataMode = 'field'; dataOffset = 0; loadData(false); });
     $('dataValue').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataField').click(); } });
     $('btnMore').addEventListener('click', function () { loadData(true); });
     $('btnClearData').addEventListener('click', clearDataResults);
+    $('chkGrouped').addEventListener('change', redrawData);
+    $('dataFilter').addEventListener('input', redrawData);
 
     Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
       th.addEventListener('click', function () {
@@ -942,7 +983,7 @@
           h.textContent = h.textContent.replace(/ [▲▼]$/, '');
         });
         th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (sortAsc ? ' ▲' : ' ▼');
-        renderFlat(sortRows(dataRowsAll), false);
+        redrawData();
       });
     });
   }
