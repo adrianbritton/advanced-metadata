@@ -17,6 +17,8 @@ namespace Jellyfin.Plugin.AdvancedMetadata.Scanning;
 
 public class ScanTask : IScheduledTask
 {
+    private const int CommitEvery = 500;
+
     private readonly ILibraryManager _library;
     private readonly MetadataStore _store;
     private readonly ILogger<ScanTask> _logger;
@@ -65,30 +67,35 @@ public class ScanTask : IScheduledTask
         cfg.LastScanSkipped = 0;
         cfg.LastScanValues = 0;
         cfg.LastScanErrors = 0;
+        cfg.LastScanBackfill = 0;
         cfg.LastScanTotal = 0;
         cfg.LastScanType = full ? "Full Scan" : "Incremental Scan";
         cfg.LastScanStatus = "Running";
         cfg.LastScanSummary = string.Empty;
         plugin.UpdateConfiguration(cfg);
 
+        var mappings = cfg.Mappings.Where(m => !string.IsNullOrWhiteSpace(m.SourceTag)).ToList();
+        var known = cfg.KnownFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // mappings the previous scan has never covered
+        var backfill = mappings
+            .Where(m => !known.Contains(m.SourceTag.ToUpperInvariant()))
+            .Select(m => m.SourceTag)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (full) { backfill.Clear(); }
+        cfg.LastScanBackfill = backfill.Count;
+        plugin.UpdateConfiguration(cfg);
+
         try
         {
-            var mappings = cfg.Mappings.Where(m => !string.IsNullOrWhiteSpace(m.SourceTag)).ToList();
             var delims = cfg.Delimiters.ToCharArray();
 
-            // syncs mappings AND prunes fields that are no longer mapped
             _store.SyncMappings(mappings);
-
             if (full)
             {
                 foreach (var m in mappings) { _store.ClearField(m.SourceTag); }
             }
-
-            // any mapping with no indexed values at all gets a full backfill pass
-            var backfill = mappings
-                .Where(m => _store.ValueCountForField(m.SourceTag) == 0)
-                .Select(m => m.SourceTag)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var items = _library.GetItemList(new InternalItemsQuery
             {
@@ -100,104 +107,112 @@ public class ScanTask : IScheduledTask
             plugin.UpdateConfiguration(cfg);
 
             _logger.LogInformation(
-                "Advanced Metadata: {Type} over {Count} tracks into {Path} (backfilling {Backfill} mapping(s))",
-                cfg.LastScanType, items.Count, _store.DatabasePath, backfill.Count);
+                "Advanced Metadata: {Type} over {Count} tracks (backfill: {Backfill} mapping(s))",
+                cfg.LastScanType, items.Count, backfill.Count);
+
+            _store.BeginBatch();
 
             var done = 0;
             var skipped = 0;
             var values = 0;
             var errors = 0;
 
-            foreach (var item in items)
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                done++;
-
-                if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
-
-                if (done % 250 == 0)
+                foreach (var item in items)
                 {
-                    cfg.LastScanItems = done;
-                    cfg.LastScanSkipped = skipped;
-                    plugin.UpdateConfiguration(cfg);
-                }
+                    ct.ThrowIfCancellationRequested();
+                    done++;
 
-                var path = item.Path;
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) { continue; }
+                    if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
 
-                var key = item.Id.ToString("N");
-                long mtime;
-                long size;
-                try
-                {
-                    var fi = new FileInfo(path);
-                    mtime = fi.LastWriteTimeUtc.Ticks;
-                    size = fi.Length;
-                }
-                catch (Exception ex)
-                {
-                    errors++;
-                    _logger.LogWarning(ex, "Advanced Metadata: could not stat {Path}", path);
-                    continue;
-                }
-
-                var unchanged = !full && _store.IsUnchanged(key, mtime, size);
-                if (unchanged && backfill.Count == 0)
-                {
-                    skipped++;
-                    continue;
-                }
-
-                var artist = GetStringList(item, "Artists");
-                var albumArtist = GetStringList(item, "AlbumArtists");
-                var album = GetStringProperty(item, "Album");
-
-                long itemId;
-                try
-                {
-                    itemId = _store.UpsertItem(key, "Audio", item.Name, artist, album, path, mtime, size);
-                }
-                catch (Exception ex)
-                {
-                    errors++;
-                    _logger.LogWarning(ex, "Advanced Metadata: could not index {Path}", path);
-                    continue;
-                }
-
-                foreach (var m in mappings)
-                {
-                    if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
-
-                    var vals = ReadTag(path, m.SourceTag, delims);
-                    if (vals.Count == 0) { continue; }
-
-                    _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
-                    values += vals.Count;
-
-                    if (m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
+                    if (done % CommitEvery == 0)
                     {
-                        var albumId = ResolveAlbumId(item);
-                        if (albumId.HasValue)
+                        _store.CommitBatch();
+                        cfg.LastScanItems = done;
+                        cfg.LastScanSkipped = skipped;
+                        plugin.UpdateConfiguration(cfg);
+                    }
+
+                    var path = item.Path;
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) { continue; }
+
+                    var key = item.Id.ToString("N");
+                    long mtime;
+                    long size;
+                    try
+                    {
+                        var fi = new FileInfo(path);
+                        mtime = fi.LastWriteTimeUtc.Ticks;
+                        size = fi.Length;
+                    }
+                    catch (Exception ex)
+                    {
+                        errors++;
+                        _logger.LogWarning(ex, "Advanced Metadata: could not stat {Path}", path);
+                        continue;
+                    }
+
+                    var unchanged = !full && _store.IsUnchanged(key, mtime, size);
+                    if (unchanged && backfill.Count == 0)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var artist = GetStringList(item, "Artists");
+                    var albumArtist = GetStringList(item, "AlbumArtists");
+                    var album = GetStringProperty(item, "Album");
+                    var albumId = ResolveAlbumId(item);
+
+                    long itemId;
+                    try
+                    {
+                        itemId = _store.UpsertItem(key, "Audio", item.Name, artist, album, path, mtime, size);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors++;
+                        _logger.LogWarning(ex, "Advanced Metadata: could not index {Path}", path);
+                        continue;
+                    }
+
+                    foreach (var m in mappings)
+                    {
+                        if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
+
+                        var vals = ReadTag(path, m.SourceTag, delims);
+                        if (vals.Count == 0) { continue; }
+
+                        _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
+                        values += vals.Count;
+
+                        if (albumId.HasValue && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
                         {
                             var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum",
                                 album, albumArtist, album, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
                         }
-                    }
 
-                    if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
-                    {
-                        foreach (var a in GetArtists(item))
+                        if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
                         {
-                            var tid = _store.UpsertItem(a.Id.ToString("N"), "MusicArtist",
-                                a.Name, a.Name, null, null, 0, 0);
-                            _store.AddValues(tid, m.SourceTag, vals);
+                            foreach (var a in GetArtists(item))
+                            {
+                                var tid = _store.UpsertItem(a.Id.ToString("N"), "MusicArtist",
+                                    a.Name, a.Name, null, null, 0, 0);
+                                _store.AddValues(tid, m.SourceTag, vals);
+                            }
                         }
                     }
                 }
             }
+            finally
+            {
+                _store.EndBatch();
+            }
 
             progress.Report(100);
+            cfg.KnownFields = mappings.Select(m => m.SourceTag.ToUpperInvariant()).ToList();
             cfg.LastScanItems = done;
             cfg.LastScanSkipped = skipped;
             cfg.LastScanValues = values;
@@ -227,10 +242,6 @@ public class ScanTask : IScheduledTask
         }
     }
 
-    /// <summary>
-    /// Finds the owning album. Audio has no AlbumEntityId/AlbumId property on this
-    /// Jellyfin build, so ParentId is the reliable source.
-    /// </summary>
     private static Guid? ResolveAlbumId(BaseItem item)
     {
         var byProperty = GetGuidProperty(item, "AlbumEntityId") ?? GetGuidProperty(item, "AlbumId");
