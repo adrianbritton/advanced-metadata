@@ -80,10 +80,7 @@ public class ScanTask : IScheduledTask
 
             if (full)
             {
-                foreach (var m in mappings)
-                {
-                    _store.ClearField(m.SourceTag);
-                }
+                foreach (var m in mappings) { _store.ClearField(m.SourceTag); }
             }
 
             var items = _library.GetItemList(new InternalItemsQuery
@@ -95,8 +92,7 @@ public class ScanTask : IScheduledTask
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
 
-            _logger.LogInformation(
-                "Advanced Metadata: {Type} over {Count} tracks into {Path}",
+            _logger.LogInformation("Advanced Metadata: {Type} over {Count} tracks into {Path}",
                 cfg.LastScanType, items.Count, _store.DatabasePath);
 
             var done = 0;
@@ -109,10 +105,7 @@ public class ScanTask : IScheduledTask
                 ct.ThrowIfCancellationRequested();
                 done++;
 
-                if (items.Count > 0)
-                {
-                    progress.Report(done * 100.0 / items.Count);
-                }
+                if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
 
                 if (done % 250 == 0)
                 {
@@ -146,10 +139,14 @@ public class ScanTask : IScheduledTask
                     continue;
                 }
 
+                var artist = GetStringList(item, "Artists");
+                var albumArtist = GetStringList(item, "AlbumArtists");
+                var album = GetStringProperty(item, "Album");
+
                 long itemId;
                 try
                 {
-                    itemId = _store.UpsertItem(key, "Audio", item.Name, path, mtime, size);
+                    itemId = _store.UpsertItem(key, "Audio", item.Name, artist, album, path, mtime, size);
                 }
                 catch (Exception ex)
                 {
@@ -171,17 +168,18 @@ public class ScanTask : IScheduledTask
                         var albumId = GetGuidProperty(item, "AlbumEntityId") ?? GetGuidProperty(item, "AlbumId");
                         if (albumId.HasValue)
                         {
-                            var albumName = GetStringProperty(item, "Album");
-                            var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum", albumName, null, 0, 0);
+                            var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum",
+                                album, albumArtist, album, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
                         }
                     }
 
                     if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
                     {
-                        foreach (var artist in GetArtists(item))
+                        foreach (var a in GetArtists(item))
                         {
-                            var tid = _store.UpsertItem(artist.Id.ToString("N"), "MusicArtist", artist.Name, null, 0, 0);
+                            var tid = _store.UpsertItem(a.Id.ToString("N"), "MusicArtist",
+                                a.Name, a.Name, null, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
                         }
                     }
@@ -198,9 +196,7 @@ public class ScanTask : IScheduledTask
             cfg.LastScanSummary = $"{done} read, {skipped} unchanged, {values} indexed, {errors} errors.";
             plugin.UpdateConfiguration(cfg);
 
-            _logger.LogInformation(
-                "Advanced Metadata: scan complete. {Summary} Index size {Bytes} bytes",
-                cfg.LastScanSummary, _store.SizeBytes);
+            _logger.LogInformation("Advanced Metadata: scan complete. {Summary}", cfg.LastScanSummary);
         }
         catch (OperationCanceledException)
         {
@@ -231,6 +227,17 @@ public class ScanTask : IScheduledTask
     {
         var p = item.GetType().GetProperty(name);
         return p?.GetValue(item) as string;
+    }
+
+    private static string? GetStringList(BaseItem item, string name)
+    {
+        var p = item.GetType().GetProperty(name);
+        if (p?.GetValue(item) is string[] arr && arr.Length > 0)
+        {
+            return string.Join(" / ", arr.Where(s => !string.IsNullOrWhiteSpace(s)));
+        }
+
+        return null;
     }
 
     private static IEnumerable<(Guid Id, string? Name)> GetArtists(BaseItem item)
@@ -274,8 +281,6 @@ public class ScanTask : IScheduledTask
                 case "DISCNUMBER": if (t.Disc > 0) { result.Add(t.Disc.ToString(CultureInfo.InvariantCulture)); } break;
             }
 
-            // Custom ID3v2 TXXX frames. Every frame with a matching description is read,
-            // so repeated tags of the same name are all captured.
             if (f.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3)
             {
                 foreach (var frame in id3.GetFrames<TagLib.Id3v2.UserTextInformationFrame>())
@@ -287,7 +292,6 @@ public class ScanTask : IScheduledTask
                 }
             }
 
-            // FLAC / Ogg Vorbis comments (may hold multiple values for one field).
             if (f.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
             {
                 var field = xiph.GetField(wanted);
@@ -296,7 +300,7 @@ public class ScanTask : IScheduledTask
         }
         catch
         {
-            // unreadable file — treated as "no value"
+            // unreadable file
         }
 
         return result
