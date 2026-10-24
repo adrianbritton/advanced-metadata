@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.AdvancedMetadata.Controllers;
 
-/// <summary>Read-only window onto the index, plus maintenance actions.</summary>
 [ApiController]
 [Authorize]
 [Route("AdvancedMetadataData")]
@@ -26,7 +25,7 @@ public class DataController : ControllerBase
         return Ok(new
         {
             StorePath = _store.DbPath,
-            Schema = "0.3",
+            Schema = "0.4",
             SizeBytes = _store.SizeBytes,
             Items = counts.Items,
             Values = counts.Values,
@@ -42,21 +41,21 @@ public class DataController : ControllerBase
     public ActionResult Values([FromQuery] string? field, [FromQuery] string? q,
                                [FromQuery] int limit = 300, [FromQuery] int offset = 0)
         => Ok(_store.BrowseField(field ?? string.Empty, q, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
-            .Select(v => new { v.Id, v.Kind, v.Item, v.Detail, v.Field, v.Value }));
+            .Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value }));
 
     [HttpGet("Item")]
     public ActionResult Item([FromQuery] string name, [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
         return Ok(_store.BrowseItem(name, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
-            .Select(v => new { v.Id, v.Kind, v.Item, v.Detail, v.Field, v.Value }));
+            .Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value }));
     }
 
     [HttpPost("DeleteFieldValues")]
     public ActionResult DeleteFieldValues([FromQuery] string field)
     {
         if (string.IsNullOrWhiteSpace(field)) { return BadRequest("field required"); }
-        var removed = _store.ClearField(field);
+        var removed = _store.DeleteField(field);
         return Ok(new { Field = field, Removed = removed });
     }
 
