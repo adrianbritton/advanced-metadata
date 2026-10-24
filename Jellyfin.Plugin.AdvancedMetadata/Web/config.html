@@ -105,6 +105,7 @@
   .am-inline { padding: 7px 10px; background: #0a0d12; color: #e6edf3;
                border: 1px solid #30363d; border-radius: 6px; max-width: 260px;
                font-family: inherit; font-size: 14px; }
+    #dataTable.hidepath .pathCol { display: none; }
 </style>
 
   <div class="am-tabs" role="tablist">
@@ -252,9 +253,18 @@
       <div class="am-label">Mapping</div>
       <select id="dataField"><option value="">— All mappings —</option></select>
     </div>
+<div class="am-field">
+      <div class="am-label">Level</div>
+      <select id="dataKind">
+        <option value="">— All levels —</option>
+        <option value="Audio">Tracks only</option>
+        <option value="MusicAlbum">Albums only</option>
+        <option value="MusicArtist">Artists only</option>
+      </select>
+    </div>
     <div class="am-field">
       <div class="am-label">Value contains (optional)</div>
-      <input id="dataValue" type="text" placeholder="e.g. Warp" autocomplete="off" />
+      <input id="dataValue" type="text" placeholder="e.g. Tchaikovsky" autocomplete="off" />
     </div>
     <div class="am-actions">
       <button id="btnDataField" class="am-btn am-btn-primary">Filter</button>
@@ -275,6 +285,10 @@
         <input id="chkGrouped" type="checkbox" />
         <span>Display grouped results</span>
       </label>
+      <label class="am-checkrow" style="font-size:.9em">
+        <input id="chkPaths" type="checkbox" />
+        <span>Show file paths</span>
+      </label>
       <input id="dataFilter" type="text" class="am-inline" placeholder="Filter these results…" autocomplete="off" />
     </div>
 
@@ -283,11 +297,12 @@
     <table class="am-table" id="dataTable" style="display:none">
       <thead>
         <tr>
-          <th style="width:20%" data-sort="Artist">Artist</th>
-          <th style="width:24%" data-sort="Item">Item</th>
-          <th style="width:11%" data-sort="Kind">Type</th>
-          <th style="width:16%" data-sort="Field">Mapping</th>
-          <th style="width:29%" data-sort="Value">Value</th>
+          <th style="width:18%" data-sort="Artist">Artist</th>
+          <th style="width:22%" data-sort="Item">Title</th>
+          <th style="width:10%" data-sort="Kind">Type</th>
+          <th style="width:14%" data-sort="Field">Mapping</th>
+          <th style="width:26%" data-sort="Value">Value</th>
+          <th class="pathCol" style="width:10%" data-sort="Detail">Path</th>
         </tr>
       </thead>
       <tbody id="dataRows"></tbody>
@@ -368,8 +383,8 @@
         Default Delimiters
       </div>
       <input id="delimiters" type="text" />
-      <div class="am-hint">The following default character delimiters are used when scanning for records
-      with multiple values. Users with custom delimiters can change them below. Default: / | ; :</div>
+      <div class="am-hint">The above default character delimiters are used when scanning for records
+      with multiple values. Users with custom delimiters can change them here. Default: / | ; :</div>
     </div>
     <div class="am-actions">
       <button id="btnSaveDelims" class="am-btn">Save Delimiters</button>
@@ -887,6 +902,7 @@
       var c = document.createElement('td'); c.textContent = KIND_LABEL[r.Kind] || r.Kind; tr.appendChild(c);
       var d = document.createElement('td'); d.className = 'am-mono'; d.textContent = r.Field; tr.appendChild(d);
       var e = document.createElement('td'); e.textContent = r.Value; e.title = r.Value; tr.appendChild(e);
+      var f = document.createElement('td'); f.className = 'pathCol'; f.textContent = r.Detail || ''; f.title = r.Detail || ''; tr.appendChild(f);
       body.appendChild(tr);
     });
   }
@@ -934,6 +950,15 @@
       head.appendChild(t); head.appendChild(k);
       card.appendChild(head);
 
+      if ($('chkPaths').checked && g.detail) {
+        var pr = document.createElement('div');
+        pr.className = 'am-itemrow';
+        var pk = document.createElement('div'); pk.className = 'k'; pk.textContent = 'Path';
+        var pv = document.createElement('div'); pv.className = 'v'; pv.textContent = g.detail;
+        pr.appendChild(pk); pr.appendChild(pv);
+        card.appendChild(pr);
+      }
+
       g.vals.forEach(function (v) {
         var row = document.createElement('div');
         row.className = 'am-itemrow';
@@ -947,10 +972,11 @@
     });
   }
 
-  function redrawData() {
+function redrawData() {
     var rows = applyFilter(dataRowsAll);
     $('dataCount').textContent = rows.length + ' row(s) shown of ' + dataRowsAll.length
       + (dataRowsAll.length >= PAGE_SIZE ? ' — more available' : '');
+    $('dataTable').classList.toggle('hidepath', !$('chkPaths').checked);
     if ($('chkGrouped').checked) { renderGrouped(rows); }
     else { renderFlat(sortRows(rows)); }
     $('btnMore').style.display = (dataRowsAll.length >= PAGE_SIZE) ? 'inline-block' : 'none';
@@ -966,6 +992,7 @@
       url = 'AdvancedMetadataData/Values?field=' + encodeURIComponent($('dataField').value)
           + '&q=' + encodeURIComponent($('dataValue').value.trim());
     }
+    url += '&kind=' + encodeURIComponent($('dataKind').value);
     url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
 
     apiGet(url).then(function (rows) {
@@ -987,6 +1014,7 @@
     $('btnMore').addEventListener('click', function () { loadData(true); });
     $('btnClearData').addEventListener('click', clearDataResults);
     $('chkGrouped').addEventListener('change', redrawData);
+    $('chkPaths').addEventListener('change', redrawData);
     $('dataFilter').addEventListener('input', redrawData);
 
     Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
