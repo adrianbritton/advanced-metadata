@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text;
 using Jellyfin.Plugin.AdvancedMetadata.Configuration;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Data.Sqlite;
@@ -10,7 +12,7 @@ namespace Jellyfin.Plugin.AdvancedMetadata.Store;
 
 public record FieldRow(string Name, string Display, string Hierarchy, int Items, int Values);
 
-public record BrowseRow(string Id, string Kind, string Item, string Detail, string Field, string Value);
+public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value);
 
 public class MetadataStore
 {
@@ -50,7 +52,7 @@ public class MetadataStore
         using var cmd = c.CreateCommand();
         cmd.CommandText = @"
 PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, jellyfin_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, name TEXT, path TEXT, mtime INTEGER, size INTEGER);
+CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, jellyfin_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, path TEXT, mtime INTEGER, size INTEGER);
 CREATE TABLE IF NOT EXISTS fields(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, display TEXT NOT NULL, hierarchy TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS vals(item_id INTEGER NOT NULL, field_id INTEGER NOT NULL, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_vals ON vals(field_id, value);
@@ -59,18 +61,25 @@ CREATE INDEX IF NOT EXISTS ix_items_name ON items(name);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
 
+        AddColumn(c, "items", "name", "TEXT");
+        AddColumn(c, "items", "artist", "TEXT");
+        AddColumn(c, "items", "album", "TEXT");
+
+        SetMeta("schema", "0.4");
+    }
+
+    private static void AddColumn(SqliteConnection c, string table, string column, string type)
+    {
         try
         {
             using var alter = c.CreateCommand();
-            alter.CommandText = "ALTER TABLE items ADD COLUMN name TEXT;";
+            alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {type};";
             alter.ExecuteNonQuery();
         }
         catch
         {
             // already present
         }
-
-        SetMeta("schema", "0.3");
     }
 
     public void SetMeta(string key, string value)
@@ -83,10 +92,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>
-    /// True only when the file is unchanged AND we already know its name.
-    /// Treating a missing name as "changed" backfills names on the next incremental scan.
-    /// </summary>
+    /// <summary>Unchanged AND already named. A missing name forces a re-read so names backfill.</summary>
     public bool IsUnchanged(string jellyfinId, long mtime, long size)
     {
         using var c = Open();
@@ -117,16 +123,21 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         tx.Commit();
     }
 
-    public long UpsertItem(string jellyfinId, string kind, string? name, string? path, long mtime, long size)
+    public long UpsertItem(string jellyfinId, string kind, string? name, string? artist, string? album,
+                           string? path, long mtime, long size)
     {
         using var c = Open();
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = @"INSERT INTO items(jellyfin_id, kind, name, path, mtime, size) VALUES ($j,$k,$n,$p,$m,$s)
-                                ON CONFLICT(jellyfin_id) DO UPDATE SET kind=$k, name=$n, path=$p, mtime=$m, size=$s;";
+            cmd.CommandText = @"INSERT INTO items(jellyfin_id, kind, name, artist, album, path, mtime, size)
+                                VALUES ($j,$k,$n,$ar,$al,$p,$m,$s)
+                                ON CONFLICT(jellyfin_id) DO UPDATE SET
+                                  kind=$k, name=$n, artist=$ar, album=$al, path=$p, mtime=$m, size=$s;";
             cmd.Parameters.AddWithValue("$j", jellyfinId);
             cmd.Parameters.AddWithValue("$k", kind);
             cmd.Parameters.AddWithValue("$n", (object?)name ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$ar", (object?)artist ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$al", (object?)album ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$p", (object?)path ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$m", mtime);
             cmd.Parameters.AddWithValue("$s", size);
@@ -192,6 +203,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         tx.Commit();
     }
 
+    /// <summary>Removes values for a field but keeps the field itself.</summary>
     public int ClearField(string field)
     {
         using var c = Open();
@@ -201,6 +213,30 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.CommandText = "DELETE FROM vals WHERE field_id=$f;";
         cmd.Parameters.AddWithValue("$f", fid);
         return cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>Removes values AND the field row — used when a mapping is deleted.</summary>
+    public int DeleteField(string field)
+    {
+        using var c = Open();
+        var fid = FieldId(c, field);
+        if (fid == 0) { return 0; }
+        int removed;
+        using (var del = c.CreateCommand())
+        {
+            del.CommandText = "DELETE FROM vals WHERE field_id=$f;";
+            del.Parameters.AddWithValue("$f", fid);
+            removed = del.ExecuteNonQuery();
+        }
+
+        using (var drop = c.CreateCommand())
+        {
+            drop.CommandText = "DELETE FROM fields WHERE id=$f;";
+            drop.Parameters.AddWithValue("$f", fid);
+            drop.ExecuteNonQuery();
+        }
+
+        return removed;
     }
 
     public void ClearAll()
@@ -245,63 +281,80 @@ ORDER BY f.name;";
         return rows;
     }
 
-    /// <summary>Filter by mapping (blank = all mappings) and optionally by value text.</summary>
-    public List<BrowseRow> BrowseField(string field, string? query, int limit, int offset)
+    private List<BrowseRow> Run(string where, List<(string K, object V)> args, int limit, int offset)
     {
         var rows = new List<BrowseRow>();
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = @"
+        cmd.CommandText = $@"
 SELECT i.jellyfin_id, i.kind,
        COALESCE(i.name, i.path, i.jellyfin_id),
-       COALESCE(i.path, ''),
+       COALESCE(i.artist, ''), COALESCE(i.album, ''), COALESCE(i.path, ''),
        f.name, v.value
 FROM vals v
 JOIN items i ON i.id = v.item_id
 JOIN fields f ON f.id = v.field_id
-WHERE ($f = '' OR f.name = $f) AND ($q = '' OR v.value LIKE $like)
-ORDER BY COALESCE(i.name, i.path), f.name, v.value
+WHERE {where}
+ORDER BY COALESCE(i.artist,''), COALESCE(i.name, i.path), f.name, v.value
 LIMIT $lim OFFSET $off;";
-        cmd.Parameters.AddWithValue("$f", (field ?? string.Empty).ToUpperInvariant());
-        cmd.Parameters.AddWithValue("$q", query ?? string.Empty);
-        cmd.Parameters.AddWithValue("$like", "%" + (query ?? string.Empty) + "%");
+        foreach (var a in args) { cmd.Parameters.AddWithValue(a.K, a.V); }
         cmd.Parameters.AddWithValue("$lim", limit);
         cmd.Parameters.AddWithValue("$off", offset);
         using var r = cmd.ExecuteReader();
         while (r.Read())
         {
-            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
+            rows.Add(new BrowseRow(
+                r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
+                r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7)));
         }
 
         return rows;
     }
 
-    /// <summary>All indexed values for items matching a title or filename — the single-item view.</summary>
-    public List<BrowseRow> BrowseItem(string name, int limit, int offset)
+    private static (string Where, List<(string K, object V)> Args) TermWhere(string query)
     {
-        var rows = new List<BrowseRow>();
-        using var c = Open();
-        using var cmd = c.CreateCommand();
-        cmd.CommandText = @"
-SELECT i.jellyfin_id, i.kind,
-       COALESCE(i.name, i.path, i.jellyfin_id),
-       COALESCE(i.path, ''),
-       f.name, v.value
-FROM vals v
-JOIN items i ON i.id = v.item_id
-JOIN fields f ON f.id = v.field_id
-WHERE (i.name LIKE $like OR i.path LIKE $like)
-ORDER BY COALESCE(i.name, i.path), f.name, v.value
-LIMIT $lim OFFSET $off;";
-        cmd.Parameters.AddWithValue("$like", "%" + name + "%");
-        cmd.Parameters.AddWithValue("$lim", limit);
-        cmd.Parameters.AddWithValue("$off", offset);
-        using var r = cmd.ExecuteReader();
-        while (r.Read())
+        var terms = (query ?? string.Empty)
+            .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Take(6)
+            .ToArray();
+
+        if (terms.Length == 0) { return ("1=1", new List<(string, object)>()); }
+
+        var sb = new StringBuilder("(");
+        var args = new List<(string K, object V)>();
+        for (var i = 0; i < terms.Length; i++)
         {
-            rows.Add(new BrowseRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5)));
+            if (i > 0) { sb.Append(" AND "); }
+            sb.Append("(COALESCE(i.name,'')||' '||COALESCE(i.path,'')||' '||COALESCE(i.artist,'')||' '||COALESCE(i.album,'')) LIKE $t").Append(i);
+            args.Add(("$t" + i, "%" + terms[i] + "%"));
         }
 
-        return rows;
+        sb.Append(")");
+        return (sb.ToString(), args);
+    }
+
+    public List<BrowseRow> BrowseField(string field, string? query, int limit, int offset)
+    {
+        var (where, args) = TermWhere(string.Empty);
+        var parts = new List<string> { where };
+        if (!string.IsNullOrWhiteSpace(field))
+        {
+            parts.Add("f.name = $f");
+            args.Add(("$f", field.ToUpperInvariant()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            parts.Add("v.value LIKE $like");
+            args.Add(("$like", "%" + query + "%"));
+        }
+
+        return Run(string.Join(" AND ", parts), args, limit, offset);
+    }
+
+    public List<BrowseRow> BrowseItem(string query, int limit, int offset)
+    {
+        var (where, args) = TermWhere(query);
+        return Run(where, args, limit, offset);
     }
 }
