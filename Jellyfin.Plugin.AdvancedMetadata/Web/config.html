@@ -637,6 +637,17 @@
     return false;
   }
 
+/* Hide immediately on any navigation click, before the new page renders. */
+  function onNavClick(e) {
+    var el = e.target;
+    while (el && el !== document.body && el.tagName !== 'A') { el = el.parentElement; }
+    if (!el || el.tagName !== 'A') { return; }
+    var href = el.getAttribute('href') || '';
+    if (href.indexOf('configurationpage') > -1) { return; }
+    var box = $('AdvancedMetadataConfigPage');
+    if (box) { box.style.setProperty('display', 'none', 'important'); }
+  }
+  
   function watchRoute() {
     var el = $('AdvancedMetadataConfigPage');
     if (!el) { return; }
@@ -1123,6 +1134,7 @@ function currentFilter() {
       watchRoute();
       diag('wiring done');
 
+  document.addEventListener('click', onNavClick, true);
       window.addEventListener('hashchange', watchRoute);
       window.addEventListener('popstate', watchRoute);
 
