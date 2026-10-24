@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         AddColumn(c, "items", "artist", "TEXT");
         AddColumn(c, "items", "album", "TEXT");
 
-        SetMeta("schema", "0.4");
+        SetMeta("schema", "0.5");
     }
 
     private static void AddColumn(SqliteConnection c, string table, string column, string type)
@@ -92,7 +92,6 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>Unchanged AND already named. A missing name forces a re-read so names backfill.</summary>
     public bool IsUnchanged(string jellyfinId, long mtime, long size)
     {
         using var c = Open();
@@ -105,11 +104,14 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         return r.GetInt64(0) == mtime && r.GetInt64(1) == size;
     }
 
+    /// <summary>Upserts the mapping list, then removes any field no longer mapped.</summary>
     public void SyncMappings(IEnumerable<Mapping> mappings)
     {
+        var list = mappings.ToList();
         using var c = Open();
         using var tx = c.BeginTransaction();
-        foreach (var m in mappings)
+
+        foreach (var m in list)
         {
             using var cmd = c.CreateCommand();
             cmd.CommandText = @"INSERT INTO fields(name, display, hierarchy) VALUES ($n,$d,$h)
@@ -118,6 +120,35 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
             cmd.Parameters.AddWithValue("$d", m.DisplayName);
             cmd.Parameters.AddWithValue("$h", m.Hierarchy);
             cmd.ExecuteNonQuery();
+        }
+
+        var keep = list.Select(m => m.SourceTag.ToUpperInvariant()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var drop = new List<long>();
+        using (var read = c.CreateCommand())
+        {
+            read.CommandText = "SELECT id, name FROM fields;";
+            using var r = read.ExecuteReader();
+            while (r.Read())
+            {
+                if (!keep.Contains(r.GetString(1))) { drop.Add(r.GetInt64(0)); }
+            }
+        }
+
+        foreach (var id in drop)
+        {
+            using (var d1 = c.CreateCommand())
+            {
+                d1.CommandText = "DELETE FROM vals WHERE field_id=$f;";
+                d1.Parameters.AddWithValue("$f", id);
+                d1.ExecuteNonQuery();
+            }
+
+            using (var d2 = c.CreateCommand())
+            {
+                d2.CommandText = "DELETE FROM fields WHERE id=$f;";
+                d2.Parameters.AddWithValue("$f", id);
+                d2.ExecuteNonQuery();
+            }
         }
 
         tx.Commit();
@@ -203,7 +234,17 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         tx.Commit();
     }
 
-    /// <summary>Removes values for a field but keeps the field itself.</summary>
+    public int ValueCountForField(string field)
+    {
+        using var c = Open();
+        var fid = FieldId(c, field);
+        if (fid == 0) { return 0; }
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM vals WHERE field_id=$f;";
+        cmd.Parameters.AddWithValue("$f", fid);
+        return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
     public int ClearField(string field)
     {
         using var c = Open();
@@ -215,7 +256,6 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);";
         return cmd.ExecuteNonQuery();
     }
 
-    /// <summary>Removes values AND the field row — used when a mapping is deleted.</summary>
     public int DeleteField(string field)
     {
         using var c = Open();
@@ -333,7 +373,7 @@ LIMIT $lim OFFSET $off;";
         return (sb.ToString(), args);
     }
 
-    public List<BrowseRow> BrowseField(string field, string? query, int limit, int offset)
+    public List<BrowseRow> BrowseField(string field, string? query, string? kind, int limit, int offset)
     {
         var (where, args) = TermWhere(string.Empty);
         var parts = new List<string> { where };
@@ -349,12 +389,24 @@ LIMIT $lim OFFSET $off;";
             args.Add(("$like", "%" + query + "%"));
         }
 
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            parts.Add("i.kind = $k");
+            args.Add(("$k", kind));
+        }
+
         return Run(string.Join(" AND ", parts), args, limit, offset);
     }
 
-    public List<BrowseRow> BrowseItem(string query, int limit, int offset)
+    public List<BrowseRow> BrowseItem(string query, string? kind, int limit, int offset)
     {
         var (where, args) = TermWhere(query);
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            where = where + " AND i.kind = $k";
+            args.Add(("$k", kind));
+        }
+
         return Run(where, args, limit, offset);
     }
 }
