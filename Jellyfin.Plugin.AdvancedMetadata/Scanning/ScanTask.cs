@@ -76,12 +76,19 @@ public class ScanTask : IScheduledTask
             var mappings = cfg.Mappings.Where(m => !string.IsNullOrWhiteSpace(m.SourceTag)).ToList();
             var delims = cfg.Delimiters.ToCharArray();
 
+            // syncs mappings AND prunes fields that are no longer mapped
             _store.SyncMappings(mappings);
 
             if (full)
             {
                 foreach (var m in mappings) { _store.ClearField(m.SourceTag); }
             }
+
+            // any mapping with no indexed values at all gets a full backfill pass
+            var backfill = mappings
+                .Where(m => _store.ValueCountForField(m.SourceTag) == 0)
+                .Select(m => m.SourceTag)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var items = _library.GetItemList(new InternalItemsQuery
             {
@@ -92,8 +99,9 @@ public class ScanTask : IScheduledTask
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
 
-            _logger.LogInformation("Advanced Metadata: {Type} over {Count} tracks into {Path}",
-                cfg.LastScanType, items.Count, _store.DatabasePath);
+            _logger.LogInformation(
+                "Advanced Metadata: {Type} over {Count} tracks into {Path} (backfilling {Backfill} mapping(s))",
+                cfg.LastScanType, items.Count, _store.DatabasePath, backfill.Count);
 
             var done = 0;
             var skipped = 0;
@@ -133,7 +141,8 @@ public class ScanTask : IScheduledTask
                     continue;
                 }
 
-                if (!full && _store.IsUnchanged(key, mtime, size))
+                var unchanged = !full && _store.IsUnchanged(key, mtime, size);
+                if (unchanged && backfill.Count == 0)
                 {
                     skipped++;
                     continue;
@@ -157,6 +166,8 @@ public class ScanTask : IScheduledTask
 
                 foreach (var m in mappings)
                 {
+                    if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
+
                     var vals = ReadTag(path, m.SourceTag, delims);
                     if (vals.Count == 0) { continue; }
 
@@ -165,7 +176,7 @@ public class ScanTask : IScheduledTask
 
                     if (m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
                     {
-                        var albumId = GetGuidProperty(item, "AlbumEntityId") ?? GetGuidProperty(item, "AlbumId");
+                        var albumId = ResolveAlbumId(item);
                         if (albumId.HasValue)
                         {
                             var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum",
@@ -214,6 +225,18 @@ public class ScanTask : IScheduledTask
             _logger.LogError(ex, "Advanced Metadata scan failed");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Finds the owning album. Audio has no AlbumEntityId/AlbumId property on this
+    /// Jellyfin build, so ParentId is the reliable source.
+    /// </summary>
+    private static Guid? ResolveAlbumId(BaseItem item)
+    {
+        var byProperty = GetGuidProperty(item, "AlbumEntityId") ?? GetGuidProperty(item, "AlbumId");
+        if (byProperty.HasValue) { return byProperty; }
+        if (item.ParentId != Guid.Empty) { return item.ParentId; }
+        return null;
     }
 
     private static Guid? GetGuidProperty(BaseItem item, string name)
