@@ -621,8 +621,8 @@
       + (extra ? ' &nbsp;·&nbsp; <b>' + extra + '</b>' : '');
   }
 
-  function disableLinks(off) {
-    Array.prototype.forEach.call(document.querySelectorAll('.am-link'), function (b) {
+ function disableLinks(off) {
+    Array.prototype.forEach.call(document.querySelectorAll('.am-link-danger'), function (b) {
       b.disabled = off;
       b.style.opacity = off ? '.45' : '';
     });
@@ -1072,7 +1072,11 @@ function redrawData() {
 
   function renderScanSummary() {
     if ($('kvStatus')) { $('kvStatus').textContent = cfg.LastScanStatus || 'Never scanned.'; }
-    if ($('kvType')) { $('kvType').textContent = cfg.LastScanType || '—'; }
+    if ($('kvType')) {
+      var t = cfg.LastScanType || '—';
+      if (cfg.LastScanBackfill > 0) { t += ' (backfilling ' + cfg.LastScanBackfill + ' new mapping(s))'; }
+      $('kvType').textContent = t;
+    }
     if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
     if ($('kvSkipped')) { $('kvSkipped').textContent = cfg.LastScanSkipped == null ? '—' : cfg.LastScanSkipped; }
     if ($('kvValues')) { $('kvValues').textContent = cfg.LastScanValues == null ? '—' : cfg.LastScanValues; }
@@ -1097,7 +1101,8 @@ function redrawData() {
       saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
         .then(function () {
-          setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
+      setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
+          $('chkFull').checked = false;
           setTimeout(refreshTask, 700);
         })
         .catch(function (e) { setStatus('scanStatus', 'err', 'Could not start scan: ' + e.message); });
