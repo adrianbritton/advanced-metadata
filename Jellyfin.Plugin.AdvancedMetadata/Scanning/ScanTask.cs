@@ -75,11 +75,12 @@ public class ScanTask : IScheduledTask
         plugin.UpdateConfiguration(cfg);
 
         var mappings = cfg.Mappings.Where(m => !string.IsNullOrWhiteSpace(m.SourceTag)).ToList();
-        var known = cfg.KnownFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var knownIds = cfg.KnownMappingIds.ToHashSet();
 
-        // mappings the previous scan has never covered
+        // Mappings this scan has never covered. Keyed on the mapping id, so deleting and
+        // re-adding a mapping always triggers a backfill.
         var backfill = mappings
-            .Where(m => !known.Contains(m.SourceTag.ToUpperInvariant()))
+            .Where(m => !knownIds.Contains(m.Id))
             .Select(m => m.SourceTag)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -212,7 +213,7 @@ public class ScanTask : IScheduledTask
             }
 
             progress.Report(100);
-            cfg.KnownFields = mappings.Select(m => m.SourceTag.ToUpperInvariant()).ToList();
+            cfg.KnownMappingIds = mappings.Select(m => m.Id).ToList();
             cfg.LastScanItems = done;
             cfg.LastScanSkipped = skipped;
             cfg.LastScanValues = values;
