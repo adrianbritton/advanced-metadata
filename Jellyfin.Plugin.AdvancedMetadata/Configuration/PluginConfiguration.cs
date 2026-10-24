@@ -12,6 +12,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public List<string> Libraries { get; set; } = new();
 
+    /// <summary>Mappings covered by the previous scan. New entries are backfilled.</summary>
+    public List<string> KnownFields { get; set; } = new();
+
     public string StorePath { get; set; } = string.Empty;
 
     public bool FullRescanRequested { get; set; }
@@ -26,6 +29,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public int LastScanSkipped { get; set; }
     public int LastScanValues { get; set; }
     public int LastScanErrors { get; set; }
+    public int LastScanBackfill { get; set; }
     public string LastScanError { get; set; } = string.Empty;
 }
 
