@@ -978,7 +978,8 @@ function clearDataResults() {
     });
   }
 
-  function redrawData() {
+function redrawData() {
+    if (!Array.isArray(dataRowsAll)) { dataRowsAll = []; }
     var rows = applyFilter(dataRowsAll);
     $('dataCount').textContent = rows.length + ' row(s) shown · ' + dataRowsAll.length
       + ' of ' + dataTotal + ' loaded'
@@ -989,7 +990,7 @@ function clearDataResults() {
     $('btnMore').style.display = (dataRowsAll.length >= PAGE_SIZE) ? 'inline-block' : 'none';
   }
 
-  function loadData(append) {
+function loadData(append) {
     var url;
     if (dataMode === 'item') {
       var n = $('dataItem').value.trim();
@@ -1002,9 +1003,15 @@ function clearDataResults() {
     url += '&kind=' + encodeURIComponent($('dataKind').value);
     url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
 
-  apiGet(url).then(function (res) {
-      var rows = (res && (res.Rows || res.rows)) || [];
-      dataTotal = (res && (res.Total != null ? res.Total : res.total)) || rows.length;
+    apiGet(url).then(function (res) {
+      var rows = [];
+      var total = 0;
+
+      if (res && Array.isArray(res.Rows)) { rows = res.Rows; total = res.Total; }
+      else if (res && Array.isArray(res.rows)) { rows = res.rows; total = res.total; }
+      else if (Array.isArray(res)) { rows = res; total = res.length; }
+
+      dataTotal = total || rows.length;
       dataRowsAll = append ? dataRowsAll.concat(rows) : rows;
       dataOffset = dataRowsAll.length;
       redrawData();
