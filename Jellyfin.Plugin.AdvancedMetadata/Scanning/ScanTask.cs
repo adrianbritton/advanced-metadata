@@ -102,7 +102,9 @@ public class ScanTask : IScheduledTask
             var items = _library.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Audio },
-                Recursive = true
+                Recursive = true,
+                IsVirtualItem = false,
+                EnableTotalRecordCount = false
             }).OfType<Audio>().ToList();
 
             cfg.LastScanTotal = items.Count;
