@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
+using Jellyfin.Plugin.AdvancedMetadata.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -82,6 +83,16 @@ public class DataController : ControllerBase
         if (string.IsNullOrWhiteSpace(field)) { return BadRequest("field required"); }
         var removed = _store.DeleteField(field);
         return Ok(new { Field = field, Removed = removed });
+    }
+
+/// <summary>Pushes the current mapping list into the store so display names update at once.</summary>
+    [HttpPost("SyncFields")]
+    public ActionResult SyncFields()
+    {
+        var mappings = Plugin.Instance?.Configuration.Mappings;
+        if (mappings is null) { return Ok(new { Synced = 0 }); }
+        _store.SyncMappings(mappings);
+        return Ok(new { Synced = mappings.Count });
     }
 
     [HttpPost("ClearAll")]
