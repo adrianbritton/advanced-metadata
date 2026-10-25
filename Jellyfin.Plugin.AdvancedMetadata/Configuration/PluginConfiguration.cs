@@ -20,6 +20,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool FullRescanRequested { get; set; }
 
     public string LastScanStatus { get; set; } = "Never scanned.";
+    public string LastScanStage { get; set; } = string.Empty;
     public string LastScanType { get; set; } = string.Empty;
     public string LastScanSummary { get; set; } = string.Empty;
     public DateTime? LastScanStartedUtc { get; set; }
