@@ -276,7 +276,7 @@
 
     <div style="display:flex; justify-content:space-between; align-items:baseline; max-width:900px">
       <h3 style="margin:0">Results</h3>
-      <button id="btnClearData" class="am-link">Reset Search</button>
+      <button id="btnResetData" class="am-link">Reset search</button>
     </div>
     <div id="dataCount" class="am-hint"></div>
 
@@ -1193,12 +1193,9 @@ function loadData(append) {
       unhideAncestors();
       unhidInfo = 'ok';
 
-      wireCreate();
-      wireManage();
-      wireData();
-      wireScan();
-      wireAdvanced();
-      watchRoute();
+    [wireCreate, wireManage, wireData, wireScan, wireAdvanced, watchRoute].forEach(function (fn) {
+        try { fn(); } catch (e) { console.warn('Advanced Metadata: wiring step failed', e); }
+      });
       diag('wiring done');
 
       document.addEventListener('click', onNavClick, true);
