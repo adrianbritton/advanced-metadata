@@ -89,26 +89,36 @@ public class ScanTask : IScheduledTask
         cfg.LastScanBackfill = backfill.Count;
         plugin.UpdateConfiguration(cfg);
 
+        void Stage(string s)
+            {
+                cfg.LastScanStage = s;
+                plugin.UpdateConfiguration(cfg);
+                _logger.LogInformation("Advanced Metadata: stage -> {Stage}", s);
+            }
+
         try
         {
             var delims = cfg.Delimiters.ToCharArray();
 
+            Stage("Pruning and syncing mappings");
             _store.SyncMappings(mappings);
             if (full)
             {
                 foreach (var m in mappings) { _store.ClearField(m.SourceTag); }
             }
 
+            Stage("Reading library item list");
             var items = _library.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Audio },
-                Recursive = true,
+                Recursive = true
                 IsVirtualItem = false,
                 EnableTotalRecordCount = false
             }).OfType<Audio>().ToList();
 
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
+            Stage("Scanning " + items.Count + " tracks");
 
             _logger.LogInformation(
                 "Advanced Metadata: {Type} over {Count} tracks (backfill: {Backfill} mapping(s))",
@@ -130,12 +140,19 @@ public class ScanTask : IScheduledTask
 
                     if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
 
-                    if (done % CommitEvery == 0)
+                if (done % CommitEvery == 0)
                     {
                         _store.CommitBatch();
                         cfg.LastScanItems = done;
                         cfg.LastScanSkipped = skipped;
                         plugin.UpdateConfiguration(cfg);
+                    }
+
+                    if (done % 1000 == 0)
+                    {
+                        _logger.LogInformation(
+                            "Advanced Metadata: heartbeat {Done}/{Total} (skipped {Skipped}, indexed {Values})",
+                            done, items.Count, skipped, values);
                     }
 
                     var path = item.Path;
@@ -165,7 +182,7 @@ public class ScanTask : IScheduledTask
                     }
 
                     var artist = GetStringList(item, "Artists");
-                    var albumArtist = GetStringList(item, "AlbumArtists");
+                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
                     var album = GetStringProperty(item, "Album");
                     var albumId = ResolveAlbumId(item);
 
@@ -215,7 +232,8 @@ public class ScanTask : IScheduledTask
                 _store.EndBatch();
             }
 
-            progress.Report(100);
+        progress.Report(100);
+            cfg.LastScanStage = "Complete";
             cfg.KnownMappingIds = mappings.Select(m => m.Id).ToList();
             cfg.LastScanItems = done;
             cfg.LastScanSkipped = skipped;
