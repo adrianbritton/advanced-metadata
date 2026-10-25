@@ -835,9 +835,12 @@ function renderManage() {
         save.addEventListener('click', function () {
           m.DisplayName = $('editName').value.trim() || m.SourceTag;
           m.Hierarchy = $('editHier').value;
-          saveConfig(cfg).then(function () {
+         saveConfig(cfg).then(function () {
+            return apiPost('AdvancedMetadataData/SyncFields');
+          }).then(function () {
             editingId = null;
             renderManage();
+            refreshDataFields();
             setStatus('manageStatus', 'ok',
               'Mapping updated. Run a scan to apply a hierarchy change.');
           }).catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
