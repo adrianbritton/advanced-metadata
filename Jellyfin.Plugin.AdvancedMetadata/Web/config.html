@@ -276,7 +276,7 @@
 
     <div style="display:flex; justify-content:space-between; align-items:baseline; max-width:900px">
       <h3 style="margin:0">Results</h3>
-      <button id="btnClearData" class="am-link">Clear results</button>
+      <button id="btnClearData" class="am-link">Reset Search</button>
     </div>
     <div id="dataCount" class="am-hint"></div>
 
@@ -431,6 +431,7 @@
   var dataMode = 'field';
   var dataOffset = 0;
   var dataRowsAll = [];
+  var dataTotal = 0;
   var sortKey = 'Artist';
   var sortAsc = true;
 
@@ -860,11 +861,16 @@
     }).catch(function () { /* ignore */ });
   }
 
-  function clearDataResults() {
+function clearDataResults() {
     dataRowsAll = [];
     dataOffset = 0;
+    dataTotal = 0;
     if ($('dataFilter')) { $('dataFilter').value = ''; }
     if ($('chkGrouped')) { $('chkGrouped').checked = false; }
+    if ($('dataItem')) { $('dataItem').value = ''; }
+    if ($('dataValue')) { $('dataValue').value = ''; }
+    if ($('dataKind')) { $('dataKind').value = ''; }
+    if ($('dataField')) { $('dataField').value = ''; }
     $('dataRows').innerHTML = '';
     $('dataGrouped').innerHTML = '';
     $('dataTable').style.display = 'none';
@@ -972,10 +978,11 @@
     });
   }
 
-function redrawData() {
+  function redrawData() {
     var rows = applyFilter(dataRowsAll);
-    $('dataCount').textContent = rows.length + ' row(s) shown of ' + dataRowsAll.length
-      + (dataRowsAll.length >= PAGE_SIZE ? ' — more available' : '');
+    $('dataCount').textContent = rows.length + ' row(s) shown · ' + dataRowsAll.length
+      + ' of ' + dataTotal + ' loaded'
+      + (dataRowsAll.length < dataTotal ? ' — use Show more for the rest' : '');
     $('dataTable').classList.toggle('hidepath', !$('chkPaths').checked);
     if ($('chkGrouped').checked) { renderGrouped(rows); }
     else { renderFlat(sortRows(rows)); }
@@ -995,12 +1002,13 @@ function redrawData() {
     url += '&kind=' + encodeURIComponent($('dataKind').value);
     url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
 
-    apiGet(url).then(function (rows) {
-      rows = rows || [];
+  apiGet(url).then(function (res) {
+      var rows = (res && (res.Rows || res.rows)) || [];
+      dataTotal = (res && (res.Total != null ? res.Total : res.total)) || rows.length;
       dataRowsAll = append ? dataRowsAll.concat(rows) : rows;
       dataOffset = dataRowsAll.length;
       redrawData();
-      setStatus('dataStatus', 'info', dataRowsAll.length + ' result(s) found.');
+      setStatus('dataStatus', 'info', dataTotal + ' result(s) found.');
     }).catch(function (e) {
       setStatus('dataStatus', 'err', 'Search failed: ' + e.message);
     });
@@ -1012,7 +1020,7 @@ function redrawData() {
     $('btnDataField').addEventListener('click', function () { dataMode = 'field'; dataOffset = 0; loadData(false); });
     $('dataValue').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataField').click(); } });
     $('btnMore').addEventListener('click', function () { loadData(true); });
-    $('btnClearData').addEventListener('click', clearDataResults);
+    $('btnResetData').addEventListener('click', clearDataResults);
     $('chkGrouped').addEventListener('change', redrawData);
     $('chkPaths').addEventListener('change', redrawData);
     $('dataFilter').addEventListener('input', redrawData);
@@ -1045,11 +1053,14 @@ function redrawData() {
     var pct = task.CurrentProgressPercentage;
     $('scanBar').style.width = (pct == null ? 0 : Math.max(0, Math.min(100, pct))) + '%';
 
-    if (running) {
+  if (running) {
       var total = cfg.LastScanTotal || 0;
       var done = cfg.LastScanItems || 0;
-      $('scanText').textContent = 'Scanning… ' + done + (total ? ' / ' + total : '') + ' tracks'
-        + (pct == null ? '' : ' — ' + Math.round(pct) + '%');
+      var stage = cfg.LastScanStage || '';
+      $('scanText').textContent = stage
+        ? stage + (total ? ' — ' + done + ' / ' + total : '')
+        : 'Scanning… ' + done + (total ? ' / ' + total : '') + ' tracks'
+          + (pct == null ? '' : ' — ' + Math.round(pct) + '%');
     } else {
       var last = task.LastExecutionResult;
       if (last && last.Status) {
@@ -1074,7 +1085,9 @@ function redrawData() {
     if ($('kvStatus')) { $('kvStatus').textContent = cfg.LastScanStatus || 'Never scanned.'; }
     if ($('kvType')) {
       var t = cfg.LastScanType || '—';
-      if (cfg.LastScanBackfill > 0) { t += ' (backfilling ' + cfg.LastScanBackfill + ' new mapping(s))'; }
+    if (cfg.LastScanBackfill > 0) {
+        t += ' — ' + cfg.LastScanBackfill + ' new mapping(s), so a full pass is needed';
+      }
       $('kvType').textContent = t;
     }
     if ($('kvItems')) { $('kvItems').textContent = cfg.LastScanItems == null ? '—' : cfg.LastScanItems; }
