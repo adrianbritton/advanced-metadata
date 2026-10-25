@@ -391,9 +391,20 @@ ORDER BY f.name;";
             return rows;
         });
 
-    private List<BrowseRow> Run(string where, List<(string K, object V)> args, int limit, int offset)
+    private (List<BrowseRow> Rows, int Total) Run(string where, List<(string K, object V)> args, int limit, int offset)
         => Read(c =>
         {
+            int total;
+            using (var cnt = c.CreateCommand())
+            {
+                cnt.CommandText = $@"SELECT COUNT(*) FROM vals v
+JOIN items i ON i.id = v.item_id
+JOIN fields f ON f.id = v.field_id
+WHERE {where};";
+                foreach (var a in args) { cnt.Parameters.AddWithValue(a.K, a.V); }
+                total = Convert.ToInt32(cnt.ExecuteScalar(), CultureInfo.InvariantCulture);
+            }
+
             var rows = new List<BrowseRow>();
             using var cmd = c.CreateCommand();
             cmd.CommandText = $@"
@@ -418,7 +429,7 @@ LIMIT $lim OFFSET $off;";
                     r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7)));
             }
 
-            return rows;
+    return (rows, total);
         });
 
     private static (string Where, List<(string K, object V)> Args) TermWhere(string query)
@@ -443,7 +454,7 @@ LIMIT $lim OFFSET $off;";
         return (sb.ToString(), args);
     }
 
-    public List<BrowseRow> BrowseField(string field, string? query, string? kind, int limit, int offset)
+    public (List<BrowseRow> Rows, int Total) BrowseField(string field, string? query, string? kind, int limit, int offset)
     {
         var (where, args) = TermWhere(string.Empty);
         var parts = new List<string> { where };
@@ -468,7 +479,7 @@ LIMIT $lim OFFSET $off;";
         return Run(string.Join(" AND ", parts), args, limit, offset);
     }
 
-    public List<BrowseRow> BrowseItem(string query, string? kind, int limit, int offset)
+    public (List<BrowseRow> Rows, int Total) BrowseItem(string query, string? kind, int limit, int offset)
     {
         var (where, args) = TermWhere(query);
         if (!string.IsNullOrWhiteSpace(kind))
