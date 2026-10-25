@@ -106,6 +106,14 @@
                border: 1px solid #30363d; border-radius: 6px; max-width: 260px;
                font-family: inherit; font-size: 14px; }
     #dataTable.hidepath .pathCol { display: none; }
+  .am-act { background: none; border: 0; padding: 0; color: #58a6ff; cursor: pointer;
+            font-size: .9em; font-family: inherit; }
+  .am-act:hover { text-decoration: underline; }
+  #manageRows input[type="text"], #manageRows select {
+    width: 100%; box-sizing: border-box; background: #0a0d12; color: #e6edf3;
+    border: 1px solid #52b54b; border-radius: 4px; padding: 5px 7px; font-size: 14px;
+    font-family: inherit;
+  }
 </style>
 
   <div class="am-tabs" role="tablist">
@@ -375,6 +383,10 @@
       <div class="am-kv"><span>Index size</span><span id="kvSize">—</span></div>
     </div>
     <div id="sizeWarning" class="am-status warn" style="max-width:680px"></div>
+    <label class="am-checkrow" style="font-size:.9em; margin-top:10px">
+      <input id="chkDiag" type="checkbox" />
+      <span>Show the diagnostics line</span>
+    </label>
 
     <h3>Tag Delimiters</h3>
     <div class="am-field">
@@ -432,6 +444,7 @@
   var dataOffset = 0;
   var dataRowsAll = [];
   var dataTotal = 0;
+  var editingId = null;
   var sortKey = 'Artist';
   var sortAsc = true;
 
@@ -623,7 +636,7 @@
   }
 
  function disableLinks(off) {
-    Array.prototype.forEach.call(document.querySelectorAll('.am-link-danger'), function (b) {
+    Array.prototype.forEach.call(document.querySelectorAll('.am-link-danger, .am-act'), function (b) {
       b.disabled = off;
       b.style.opacity = off ? '.45' : '';
     });
@@ -773,7 +786,7 @@
 
   /* ---------------- manage ---------------- */
 
-  function renderManage() {
+function renderManage() {
     var body = $('manageRows');
     if (!body) { return; }
     body.innerHTML = '';
@@ -783,44 +796,116 @@
 
     list.forEach(function (m) {
       var tr = document.createElement('tr');
-      var tdTag = document.createElement('td');
-      tdTag.className = 'am-mono'; tdTag.textContent = m.SourceTag; tdTag.title = m.SourceTag;
-      tr.appendChild(tdTag);
+      var editing = (m.Id === editingId);
 
-      var tdName = document.createElement('td');
-      tdName.textContent = m.DisplayName; tdName.title = m.DisplayName;
-      tr.appendChild(tdName);
+      if (editing) {
+        var tdTag = document.createElement('td');
+        tdTag.className = 'am-mono'; tdTag.textContent = m.SourceTag;
+        tr.appendChild(tdTag);
 
-      var tdHier = document.createElement('td');
-      tdHier.textContent = HIER[m.Hierarchy] || m.Hierarchy;
-      tr.appendChild(tdHier);
+        var tdName = document.createElement('td');
+        var nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.id = 'editName';
+        nameInput.value = m.DisplayName;
+        tdName.appendChild(nameInput);
+        tr.appendChild(tdName);
 
-      var tdCreated = document.createElement('td');
-      tdCreated.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
-      tr.appendChild(tdCreated);
+        var tdHier = document.createElement('td');
+        var hierSel = document.createElement('select');
+        hierSel.id = 'editHier';
+        ['songs', 'songs_albums', 'albums', 'songs_albums_artists'].forEach(function (h) {
+          var o = document.createElement('option');
+          o.value = h;
+          o.textContent = HIER[h];
+          if (h === m.Hierarchy) { o.selected = true; }
+          hierSel.appendChild(o);
+        });
+        tdHier.appendChild(hierSel);
+        tr.appendChild(tdHier);
 
-      var tdAct = document.createElement('td');
-      var del = document.createElement('button');
-      del.className = 'am-link am-link-danger';
-      del.textContent = 'Delete';
-      del.addEventListener('click', function () {
-        if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
-            + m.SourceTag + '" from the plugin index. Your audio files and Jellyfin are not touched. Continue?')) { return; }
-        apiPost('AdvancedMetadataData/DeleteFieldValues?field=' + encodeURIComponent(m.SourceTag))
-          .then(function (r) {
-            var removed = 0;
-            try { var j = JSON.parse(r); removed = j.Removed != null ? j.Removed : (j.removed || 0); } catch (e) { removed = 0; }
-            cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
-            return saveConfig(cfg).then(function () {
-              renderManage(); refreshDataFields();
-              setStatus('manageStatus', 'ok', 'Mapping removed and ' + removed + ' indexed value(s) deleted.');
-              loadInfo();
-            });
-          })
-          .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
-      });
-      tdAct.appendChild(del);
-      tr.appendChild(tdAct);
+        var tdCreated = document.createElement('td');
+        tdCreated.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
+        tr.appendChild(tdCreated);
+
+        var tdAct = document.createElement('td');
+        var save = document.createElement('button');
+        save.className = 'am-act';
+        save.textContent = 'Save';
+        save.addEventListener('click', function () {
+          m.DisplayName = $('editName').value.trim() || m.SourceTag;
+          m.Hierarchy = $('editHier').value;
+          saveConfig(cfg).then(function () {
+            editingId = null;
+            renderManage();
+            setStatus('manageStatus', 'ok',
+              'Mapping updated. Run a scan to apply a hierarchy change.');
+          }).catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
+        });
+
+        var cancel = document.createElement('button');
+        cancel.className = 'am-act';
+        cancel.textContent = 'Cancel';
+        cancel.style.marginLeft = '10px';
+        cancel.addEventListener('click', function () { editingId = null; renderManage(); });
+
+        tdAct.appendChild(save);
+        tdAct.appendChild(cancel);
+        tr.appendChild(tdAct);
+      } else {
+        var tdTag2 = document.createElement('td');
+        tdTag2.className = 'am-mono'; tdTag2.textContent = m.SourceTag; tdTag2.title = m.SourceTag;
+        tr.appendChild(tdTag2);
+
+        var tdName2 = document.createElement('td');
+        tdName2.textContent = m.DisplayName; tdName2.title = m.DisplayName;
+        tr.appendChild(tdName2);
+
+        var tdHier2 = document.createElement('td');
+        tdHier2.textContent = HIER[m.Hierarchy] || m.Hierarchy;
+        tr.appendChild(tdHier2);
+
+        var tdCreated2 = document.createElement('td');
+        tdCreated2.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
+        tr.appendChild(tdCreated2);
+
+        var tdAct2 = document.createElement('td');
+        var edit = document.createElement('button');
+        edit.className = 'am-act';
+        edit.textContent = 'Edit';
+        edit.addEventListener('click', function () { editingId = m.Id; renderManage(); });
+
+        var sep = document.createElement('span');
+        sep.textContent = ' · ';
+        sep.style.opacity = '.5';
+
+        var del = document.createElement('button');
+        del.className = 'am-link am-link-danger';
+        del.textContent = 'Delete';
+        del.addEventListener('click', function () {
+          if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
+              + m.SourceTag + '" from the plugin index. Your audio files and Jellyfin are not touched. Continue?')) { return; }
+          apiPost('AdvancedMetadataData/DeleteFieldValues?field=' + encodeURIComponent(m.SourceTag))
+            .then(function (r) {
+              var removed = 0;
+              try { var j = JSON.parse(r); removed = j.Removed != null ? j.Removed : (j.removed || 0); } catch (e) { removed = 0; }
+              cfg.Mappings = cfg.Mappings.filter(function (x) { return x.Id !== m.Id; });
+              editingId = null;
+              return saveConfig(cfg).then(function () {
+                renderManage(); refreshDataFields();
+                setStatus('manageStatus', 'ok', 'Mapping removed and ' + removed + ' indexed value(s) deleted.');
+                loadInfo();
+              });
+            })
+            .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
+        });
+
+        tdAct2.appendChild(edit);
+        tdAct2.appendChild(sep);
+        tdAct2.appendChild(del);
+        tr.appendChild(tdAct2);
+      }
+
       body.appendChild(tr);
     });
   }
@@ -1160,6 +1245,23 @@ function loadData(append) {
     }).catch(function () { /* ignore */ });
   }
 
+function applyDiagVisibility() {
+    var el = $('amDiag');
+    if (!el) { return; }
+    var on = window.localStorage.getItem('amShowDiag') === '1';
+    el.style.display = on ? 'block' : 'none';
+  }
+
+  function wireDiag() {
+    var box = $('chkDiag');
+    if (!box) { return; }
+    box.checked = window.localStorage.getItem('amShowDiag') === '1';
+    box.addEventListener('change', function () {
+      window.localStorage.setItem('amShowDiag', box.checked ? '1' : '0');
+      applyDiagVisibility();
+    });
+  }
+  
   function wireAdvanced() {
     $('btnRebuild').addEventListener('click', function () {
       if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
@@ -1193,7 +1295,7 @@ function loadData(append) {
       unhideAncestors();
       unhidInfo = 'ok';
 
-    [wireCreate, wireManage, wireData, wireScan, wireAdvanced, watchRoute].forEach(function (fn) {
+    [wireCreate, wireManage, wireData, wireScan, wireAdvanced, wireDiag, watchRoute, applyDiagVisibility].forEach(function (fn) {
         try { fn(); } catch (e) { console.warn('Advanced Metadata: wiring step failed', e); }
       });
       diag('wiring done');
