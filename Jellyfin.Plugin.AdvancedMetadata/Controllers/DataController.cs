@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
 using Microsoft.AspNetCore.Authorization;
@@ -35,18 +36,28 @@ public class DataController : ControllerBase
 
     [HttpGet("Fields")]
     public ActionResult Fields()
-        => Ok(_store.FieldSummary().Select(f => new { f.Name, f.Display, f.Hierarchy, f.Items, f.Values }));
+    {
+        var rows = new List<object>();
+        foreach (var f in _store.FieldSummary())
+        {
+            rows.Add(new { f.Name, f.Display, f.Hierarchy, f.Items, f.Values });
+        }
+
+        return Ok(rows);
+    }
 
     [HttpGet("Values")]
     public ActionResult Values([FromQuery] string? field, [FromQuery] string? q, [FromQuery] string? kind,
                                [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         var result = _store.BrowseField(field ?? string.Empty, q, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
-        return Ok(new
+        var rows = new List<object>();
+        foreach (var v in result.Rows)
         {
-            Total = result.Total,
-            Rows = result.Rows.Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value })
-        });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value });
+        }
+
+        return Ok(new { Total = result.Total, Rows = rows });
     }
 
     [HttpGet("Item")]
@@ -54,12 +65,15 @@ public class DataController : ControllerBase
                              [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
+
         var result = _store.BrowseItem(name, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
-        return Ok(new
+        var rows = new List<object>();
+        foreach (var v in result.Rows)
         {
-            Total = result.Total,
-            Rows = result.Rows.Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value })
-        });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value });
+        }
+
+        return Ok(new { Total = result.Total, Rows = rows });
     }
 
     [HttpPost("DeleteFieldValues")]
