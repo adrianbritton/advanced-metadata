@@ -25,7 +25,7 @@ public class DataController : ControllerBase
         return Ok(new
         {
             StorePath = _store.DbPath,
-            Schema = "0.5",
+            Schema = "0.6",
             SizeBytes = _store.SizeBytes,
             Items = counts.Items,
             Values = counts.Values,
@@ -40,16 +40,26 @@ public class DataController : ControllerBase
     [HttpGet("Values")]
     public ActionResult Values([FromQuery] string? field, [FromQuery] string? q, [FromQuery] string? kind,
                                [FromQuery] int limit = 300, [FromQuery] int offset = 0)
-        => Ok(_store.BrowseField(field ?? string.Empty, q, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
-            .Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value }));
+    {
+        var result = _store.BrowseField(field ?? string.Empty, q, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+        return Ok(new
+        {
+            Total = result.Total,
+            Rows = result.Rows.Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value })
+        });
+    }
 
     [HttpGet("Item")]
     public ActionResult Item([FromQuery] string name, [FromQuery] string? kind,
                              [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
-        return Ok(_store.BrowseItem(name, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset))
-            .Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value }));
+        var result = _store.BrowseItem(name, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+        return Ok(new
+        {
+            Total = result.Total,
+            Rows = result.Rows.Select(v => new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value })
+        });
     }
 
     [HttpPost("DeleteFieldValues")]
