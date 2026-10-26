@@ -55,7 +55,7 @@ public class DataController : ControllerBase
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride });
         }
 
         return Ok(new { Total = result.Total, Rows = rows });
@@ -71,10 +71,27 @@ public class DataController : ControllerBase
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride });
         }
 
         return Ok(new { Total = result.Total, Rows = rows });
+    }
+
+    [HttpGet("Overrides")]
+    public ActionResult Overrides()
+        => Ok(_store.ListOverrides());
+
+    [HttpPost("SetOverride")]
+    public ActionResult SetOverride([FromQuery] string jellyfinId, [FromQuery] string field,
+                                    [FromQuery] string? oldValue, [FromQuery] string? newValue)
+    {
+        if (string.IsNullOrWhiteSpace(jellyfinId) || string.IsNullOrWhiteSpace(field))
+        {
+            return BadRequest("jellyfinId and field are required");
+        }
+
+        _store.SetOverride(jellyfinId, field, oldValue ?? string.Empty, newValue ?? string.Empty);
+        return Ok(new { jellyfinId, field });
     }
 
     [HttpPost("DeleteFieldValues")]
