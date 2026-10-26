@@ -188,17 +188,6 @@ public class ScanTask : IScheduledTask
                     var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
                     var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
 
-                    // Last resort: read the file's own tags. Jellyfin occasionally has an item
-                    // whose artist fields are empty even though the file carries the tag.
-                    if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(album))
-                    {
-                    var artist = ArtistNames(item)
-                        ?? GetStringList(item, "AlbumArtists")
-                        ?? ArtistNames(albumItem);
-                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
-                    var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
-
-                    // Always fall back to the file's own tags when Jellyfin has nothing.
                     if (string.IsNullOrWhiteSpace(artist))
                     {
                         artist = ReadTag(path, "ARTIST", delims).FirstOrDefault();
@@ -212,7 +201,6 @@ public class ScanTask : IScheduledTask
                     if (string.IsNullOrWhiteSpace(album))
                     {
                         album = ReadTag(path, "ALBUM", delims).FirstOrDefault();
-                    }
                     }
 
                     long itemId;
@@ -240,10 +228,10 @@ public class ScanTask : IScheduledTask
 
                         if (albumId.HasValue && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
                         {
-                            var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum",
-                                album, albumArtist, album, null, 0, 0);
+                            var aid = albumId.Value.ToString("N");
+                            var tid = _store.UpsertItem(aid, "MusicAlbum", album, albumArtist, album, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
-                            _store.ApplyOverrides(albumId.Value.ToString("N"), m.SourceTag);
+                            _store.ApplyOverrides(aid, m.SourceTag);
                         }
 
                         if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
