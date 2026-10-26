@@ -173,7 +173,7 @@ public class ScanTask : IScheduledTask
                     }
 
                     var unchanged = !full && _store.IsUnchanged(key, mtime, size);
-                    if (unchanged && backfill.Count == 0)
+                    if (unchanged && backfill.Count == 0 && !_store.ItemMissingMeta(key))
                     {
                         skipped++;
                         continue;
@@ -192,14 +192,27 @@ public class ScanTask : IScheduledTask
                     // whose artist fields are empty even though the file carries the tag.
                     if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(album))
                     {
-                        var fileArtist = ReadTag(path, "ARTIST", delims).FirstOrDefault()
-                                      ?? ReadTag(path, "ALBUMARTIST", delims).FirstOrDefault();
-                        if (string.IsNullOrWhiteSpace(artist)) { artist = fileArtist; }
-                        if (string.IsNullOrWhiteSpace(albumArtist)) { albumArtist = fileArtist; }
-                        if (string.IsNullOrWhiteSpace(album))
-                        {
-                            album = ReadTag(path, "ALBUM", delims).FirstOrDefault();
-                        }
+                    var artist = ArtistNames(item)
+                        ?? GetStringList(item, "AlbumArtists")
+                        ?? ArtistNames(albumItem);
+                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
+                    var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
+
+                    // Always fall back to the file's own tags when Jellyfin has nothing.
+                    if (string.IsNullOrWhiteSpace(artist))
+                    {
+                        artist = ReadTag(path, "ARTIST", delims).FirstOrDefault();
+                    }
+
+                    if (string.IsNullOrWhiteSpace(albumArtist))
+                    {
+                        albumArtist = ReadTag(path, "ALBUMARTIST", delims).FirstOrDefault() ?? artist;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(album))
+                    {
+                        album = ReadTag(path, "ALBUM", delims).FirstOrDefault();
+                    }
                     }
 
                     long itemId;
