@@ -159,6 +159,20 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
             cmd.ExecuteNonQuery();
         });
 
+/// <summary>True when an item is missing artist or album metadata and should be repaired.</summary>
+    public bool ItemMissingMeta(string jellyfinId)
+        => Read(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT artist, album FROM items WHERE jellyfin_id=$j;";
+            cmd.Parameters.AddWithValue("$j", jellyfinId);
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) { return true; }
+            var a = r.IsDBNull(0) ? null : r.GetString(0);
+            var b = r.IsDBNull(1) ? null : r.GetString(1);
+            return string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b);
+        });
+    
     /* ---------------- items ---------------- */
 
     public bool IsUnchanged(string jellyfinId, long mtime, long size)
