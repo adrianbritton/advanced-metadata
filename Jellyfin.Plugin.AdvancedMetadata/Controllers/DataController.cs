@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
-using Jellyfin.Plugin.AdvancedMetadata.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,7 +26,7 @@ public class DataController : ControllerBase
         return Ok(new
         {
             StorePath = _store.DbPath,
-            Schema = "0.6",
+            Schema = "0.7",
             SizeBytes = _store.SizeBytes,
             Items = counts.Items,
             Values = counts.Values,
@@ -49,9 +48,11 @@ public class DataController : ControllerBase
 
     [HttpGet("Values")]
     public ActionResult Values([FromQuery] string? field, [FromQuery] string? q, [FromQuery] string? kind,
+                               [FromQuery] bool onlyOverrides = false,
                                [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
-        var result = _store.BrowseField(field ?? string.Empty, q, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+        var result = _store.BrowseField(field ?? string.Empty, q, kind, onlyOverrides,
+            Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
@@ -63,11 +64,12 @@ public class DataController : ControllerBase
 
     [HttpGet("Item")]
     public ActionResult Item([FromQuery] string name, [FromQuery] string? kind,
+                             [FromQuery] bool onlyOverrides = false,
                              [FromQuery] int limit = 300, [FromQuery] int offset = 0)
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
 
-        var result = _store.BrowseItem(name, kind, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+        var result = _store.BrowseItem(name, kind, onlyOverrides, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
@@ -94,15 +96,26 @@ public class DataController : ControllerBase
         return Ok(new { jellyfinId, field });
     }
 
-    [HttpPost("DeleteFieldValues")]
-    public ActionResult DeleteFieldValues([FromQuery] string field)
+    [HttpPost("ClearOverride")]
+    public ActionResult ClearOverride([FromQuery] string jellyfinId, [FromQuery] string field,
+                                      [FromQuery] string? oldValue)
     {
-        if (string.IsNullOrWhiteSpace(field)) { return BadRequest("field required"); }
-        var removed = _store.DeleteField(field);
-        return Ok(new { Field = field, Removed = removed });
+        if (string.IsNullOrWhiteSpace(jellyfinId) || string.IsNullOrWhiteSpace(field))
+        {
+            return BadRequest("jellyfinId and field are required");
+        }
+
+        var removed = _store.ClearOverride(jellyfinId, field, oldValue ?? string.Empty);
+        return Ok(new { Removed = removed });
     }
 
-/// <summary>Pushes the current mapping list into the store so display names update at once.</summary>
+    [HttpPost("ClearAllOverrides")]
+    public ActionResult ClearAllOverrides()
+    {
+        var removed = _store.ClearAllOverrides();
+        return Ok(new { Removed = removed });
+    }
+
     [HttpPost("SyncFields")]
     public ActionResult SyncFields()
     {
@@ -110,6 +123,14 @@ public class DataController : ControllerBase
         if (mappings is null) { return Ok(new { Synced = 0 }); }
         _store.SyncMappings(mappings);
         return Ok(new { Synced = mappings.Count });
+    }
+
+    [HttpPost("DeleteFieldValues")]
+    public ActionResult DeleteFieldValues([FromQuery] string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) { return BadRequest("field required"); }
+        var removed = _store.DeleteField(field);
+        return Ok(new { Field = field, Removed = removed });
     }
 
     [HttpPost("ClearAll")]
