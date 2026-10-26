@@ -515,8 +515,8 @@ WHERE {where};";
 SELECT i.jellyfin_id, i.kind,
        COALESCE(i.name, i.path, i.jellyfin_id),
        COALESCE(i.artist, ''), COALESCE(i.album, ''), COALESCE(i.path, ''),
-       CASE WHEN EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value) THEN 1 ELSE 0 END,
-       f.name, v.value
+        f.name, v.value,
+       CASE WHEN EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value) THEN 1 ELSE 0 END
 FROM vals v
 JOIN items i ON i.id = v.item_id
 JOIN fields f ON f.id = v.field_id
