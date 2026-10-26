@@ -12,7 +12,9 @@ namespace Jellyfin.Plugin.AdvancedMetadata.Store;
 
 public record FieldRow(string Name, string Display, string Hierarchy, int Items, int Values);
 
-public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value);
+public record OverrideRow(string JellyfinId, string Field, string OldValue, string NewValue, string CreatedUtc);
+
+public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value, bool IsOverride);
 
 public class MetadataStore
 {
@@ -113,6 +115,8 @@ CREATE TABLE IF NOT EXISTS vals(item_id INTEGER NOT NULL, field_id INTEGER NOT N
 CREATE INDEX IF NOT EXISTS ix_vals ON vals(field_id, value);
 CREATE INDEX IF NOT EXISTS ix_vals_item ON vals(item_id);
 CREATE INDEX IF NOT EXISTS ix_items_name ON items(name);
+CREATE TABLE IF NOT EXISTS overrides(id INTEGER PRIMARY KEY, jellyfin_id TEXT NOT NULL, field TEXT NOT NULL, old_value TEXT NOT NULL DEFAULT '', new_value TEXT NOT NULL DEFAULT '', created_utc TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS ix_ovr ON overrides(jellyfin_id, field, old_value);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
 
         AddColumn(c, "items", "name", "TEXT");
@@ -257,6 +261,15 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         _fieldIds.Clear();
     }
 
+    private static long FieldIdFor(SqliteConnection c, string field)
+    {
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT id FROM fields WHERE name=$n;";
+        cmd.Parameters.AddWithValue("$n", field.ToUpperInvariant());
+        var r = cmd.ExecuteScalar();
+        return r is null or DBNull ? 0L : (long)r;
+    }
+    
     private long FieldId(SqliteConnection c, string field)
     {
         var key = field.ToUpperInvariant();
@@ -349,6 +362,97 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         return removed;
     }
 
+/* ---------------- overrides ---------------- */
+
+    public void SetOverride(string jellyfinId, string field, string oldValue, string newValue)
+        => Write(c =>
+        {
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = @"INSERT INTO overrides(jellyfin_id, field, old_value, new_value, created_utc)
+                                    VALUES ($j,$f,$o,$n,$d)
+                                    ON CONFLICT(jellyfin_id, field, old_value) DO UPDATE SET new_value=$n;";
+                cmd.Parameters.AddWithValue("$j", jellyfinId);
+                cmd.Parameters.AddWithValue("$f", field.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("$o", oldValue ?? string.Empty);
+                cmd.Parameters.AddWithValue("$n", newValue ?? string.Empty);
+                cmd.Parameters.AddWithValue("$d", DateTime.UtcNow.ToString("o"));
+                cmd.ExecuteNonQuery();
+            }
+
+            ApplyInner(c, jellyfinId, field);
+        });
+
+    public void ApplyOverrides(string jellyfinId, string field)
+        => Write(c => ApplyInner(c, jellyfinId, field));
+
+    private static void ApplyInner(SqliteConnection c, string jellyfinId, string field)
+    {
+        long itemId;
+        using (var idc = c.CreateCommand())
+        {
+            idc.CommandText = "SELECT id FROM items WHERE jellyfin_id=$j;";
+            idc.Parameters.AddWithValue("$j", jellyfinId);
+            var r = idc.ExecuteScalar();
+            if (r is null or DBNull) { return; }
+            itemId = (long)r;
+        }
+
+        var fid = FieldIdFor(c, field);
+        if (fid == 0) { return; }
+
+        var pairs = new List<(string Old, string New)>();
+        using (var sel = c.CreateCommand())
+        {
+            sel.CommandText = "SELECT old_value, new_value FROM overrides WHERE jellyfin_id=$j AND field=$f;";
+            sel.Parameters.AddWithValue("$j", jellyfinId);
+            sel.Parameters.AddWithValue("$f", field.ToUpperInvariant());
+            using var r = sel.ExecuteReader();
+            while (r.Read())
+            {
+                pairs.Add((r.GetString(0), r.GetString(1)));
+            }
+        }
+
+        foreach (var (oldV, newV) in pairs)
+        {
+            if (!string.IsNullOrEmpty(oldV))
+            {
+                using var del = c.CreateCommand();
+                del.CommandText = "DELETE FROM vals WHERE item_id=$i AND field_id=$f AND value=$v;";
+                del.Parameters.AddWithValue("$i", itemId);
+                del.Parameters.AddWithValue("$f", fid);
+                del.Parameters.AddWithValue("$v", oldV);
+                del.ExecuteNonQuery();
+            }
+
+            if (!string.IsNullOrEmpty(newV))
+            {
+                using var ins = c.CreateCommand();
+                ins.CommandText = "INSERT OR IGNORE INTO vals(item_id, field_id, value) VALUES ($i,$f,$v);";
+                ins.Parameters.AddWithValue("$i", itemId);
+                ins.Parameters.AddWithValue("$f", fid);
+                ins.Parameters.AddWithValue("$v", newV);
+                ins.ExecuteNonQuery();
+            }
+        }
+    }
+
+    public List<OverrideRow> ListOverrides()
+        => Read(c =>
+        {
+            var rows = new List<OverrideRow>();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "SELECT jellyfin_id, field, old_value, new_value, created_utc FROM overrides ORDER BY field;";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                rows.Add(new OverrideRow(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4)));
+            }
+
+            return rows;
+        });
+    
    public void ClearAll()
     {
         Write(c => { Exec(c, "DELETE FROM vals; DELETE FROM items;"); });
@@ -411,6 +515,7 @@ WHERE {where};";
 SELECT i.jellyfin_id, i.kind,
        COALESCE(i.name, i.path, i.jellyfin_id),
        COALESCE(i.artist, ''), COALESCE(i.album, ''), COALESCE(i.path, ''),
+       CASE WHEN EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value) THEN 1 ELSE 0 END,
        f.name, v.value
 FROM vals v
 JOIN items i ON i.id = v.item_id
@@ -426,7 +531,7 @@ LIMIT $lim OFFSET $off;";
             {
                 rows.Add(new BrowseRow(
                     r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
-                    r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7)));
+                    r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7), r.GetInt64(8) == 1));
             }
 
     return (rows, total);
