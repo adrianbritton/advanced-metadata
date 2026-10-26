@@ -181,13 +181,20 @@ public class ScanTask : IScheduledTask
                         continue;
                     }
 
-                    var artist = GetStringList(item, "Artists");
-                    var albumArtist = GetStringList(item, "AlbumArtists")
-                        ?? GetStringList(item, "Artists")
-                        ?? GetStringProperty(item, "AlbumArtist")
-                        ?? artist;
+                var artist = ArtistNames(item);
+                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
                     var album = GetStringProperty(item, "Album");
                     var albumId = ResolveAlbumId(item);
+
+                    if (albumId.HasValue && (string.IsNullOrWhiteSpace(albumArtist) || string.IsNullOrWhiteSpace(album)))
+                    {
+                        var albumItem = _library.GetItemById(albumId.Value);
+                        if (albumItem is not null)
+                        {
+                            if (string.IsNullOrWhiteSpace(albumArtist)) { albumArtist = ArtistNames(albumItem); }
+                            if (string.IsNullOrWhiteSpace(album)) { album = albumItem.Name; }
+                        }
+                    }
 
                     long itemId;
                     try
@@ -294,6 +301,29 @@ public class ScanTask : IScheduledTask
         if (p?.GetValue(item) is string[] arr && arr.Length > 0)
         {
             return string.Join(" / ", arr.Where(s => !string.IsNullOrWhiteSpace(s)));
+        }
+
+        return null;
+    }
+
+    private static string? ArtistNames(BaseItem? item)
+    {
+        if (item is null) { return null; }
+
+        var direct = GetStringList(item, "Artists");
+        if (!string.IsNullOrWhiteSpace(direct)) { return direct; }
+
+        var p = item.GetType().GetProperty("ArtistItems");
+        if (p?.GetValue(item) is System.Collections.IEnumerable list)
+        {
+            var names = new List<string>();
+            foreach (var e in list)
+            {
+                var n = e?.GetType().GetProperty("Name")?.GetValue(e) as string;
+                if (!string.IsNullOrWhiteSpace(n)) { names.Add(n); }
+            }
+
+            if (names.Count > 0) { return string.Join(" / ", names); }
         }
 
         return null;
