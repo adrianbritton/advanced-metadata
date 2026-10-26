@@ -309,6 +309,13 @@
         <span>Display grouped results</span>
       </label>
       <label class="am-checkrow" style="font-size:.9em">
+        <input id="chkOverrides" type="checkbox" />
+        <span>Only edited values</span>
+      </label>
+      <span style="font-size:.85em; color:#8b949e">
+        <span style="color:#e2a03f">●</span> = edited, overrides the file
+      </span>
+      <label class="am-checkrow" style="font-size:.9em">
         <input id="chkPaths" type="checkbox" />
         <span>Show file paths</span>
       </label>
@@ -428,6 +435,13 @@
     <h3>Maintenance</h3>
     <div class="am-actions">
       <button id="btnRebuild" class="am-btn am-btn-danger">Rebuild Store</button>
+    </div>
+    <div class="am-actions">
+      <button id="btnResetOverrides" class="am-btn am-btn-danger">Reset All Data Overrides</button>
+    </div>
+    <div class="am-hint" style="max-width:620px">
+      Removes <strong>every</strong> edit and deletion you have made to indexed values, and restores
+      everything from your files on the next scan. Mappings are not affected.
     </div>
     <div class="am-hint" style="max-width:620px">
       Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
@@ -1019,6 +1033,13 @@ function clearDataResults() {
         mark.title = 'Edited — overrides the file';
         mark.style.color = '#e2a03f';
         e.appendChild(mark);
+        e.appendChild(document.createTextNode(' '));
+        var rv = document.createElement('button');
+        rv.className = 'am-act';
+        rv.textContent = 'Revert';
+        rv.title = 'Remove this edit and restore the value from the file on the next scan';
+        rv.addEventListener('click', function () { revertValue(r); });
+        e.appendChild(rv);
       }
       e.appendChild(document.createTextNode(' '));
       var eb = document.createElement('button');
@@ -1127,6 +1148,7 @@ function loadData(append) {
           + '&q=' + encodeURIComponent($('dataValue').value.trim());
     }
     url += '&kind=' + encodeURIComponent($('dataKind').value);
+    url += '&onlyOverrides=' + ($('chkOverrides').checked ? 'true' : 'false');
     url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
 
     apiGet(url).then(function (res) {
@@ -1147,6 +1169,22 @@ function loadData(append) {
     });
   }
 
+function revertValue(r) {
+    if (!window.confirm('Undo the edit on "' + r.Field + '" for:\n\n'
+        + (r.Artist ? r.Artist + ' — ' : '') + r.Item
+        + '\n\nThe original value returns on the next scan. Continue?')) { return; }
+
+    apiPost('AdvancedMetadataData/ClearOverride'
+      + '?jellyfinId=' + encodeURIComponent(r.Id)
+      + '&field=' + encodeURIComponent(r.Field)
+      + '&oldValue=' + encodeURIComponent(r.Value))
+      .then(function () {
+        setStatus('dataStatus', 'ok', 'Edit removed. Run a scan to restore the original value.');
+        loadData(false);
+      })
+      .catch(function (e) { setStatus('dataStatus', 'err', 'REVERT FAILED: ' + e.message); });
+  }
+  
 function deleteValue(r) {
     var msg = 'Remove "' + r.Value + '" from "' + r.Field + '" on:\n\n'
       + (r.Artist ? r.Artist + ' — ' : '') + r.Item
@@ -1193,6 +1231,7 @@ function deleteValue(r) {
     $('btnResetData').addEventListener('click', clearDataResults);
     $('chkGrouped').addEventListener('change', redrawData);
     $('chkPaths').addEventListener('change', redrawData);
+    $('chkOverrides').addEventListener('change', function () { dataOffset = 0; loadData(false); });
     $('dataFilter').addEventListener('input', redrawData);
 
     Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
@@ -1349,7 +1388,16 @@ function applyDiagVisibility() {
         loadInfo();
       }).catch(function (e) { setStatus('advancedStatus', 'err', 'REBUILD FAILED: ' + e.message); });
     });
-  }
+  $('btnResetOverrides').addEventListener('click', function () {
+      if (!window.confirm('WARNING: This removes EVERY value you have edited or deleted across the whole index. '
+          + 'All values will be restored from your files on the next scan. Mappings are not affected. Continue?')) { return; }
+      apiPost('AdvancedMetadataData/ClearAllOverrides').then(function (r) {
+        var n = 0;
+        try { var j = JSON.parse(r); n = j.Removed != null ? j.Removed : 0; } catch (e) { n = 0; }
+        setStatus('advancedStatus', 'ok', n + ' override(s) removed. Run a scan to restore the original values.');
+      }).catch(function (e) { setStatus('advancedStatus', 'err', 'RESET FAILED: ' + e.message); });
+    });
+}
 
   /* ---------------- boot ---------------- */
 
