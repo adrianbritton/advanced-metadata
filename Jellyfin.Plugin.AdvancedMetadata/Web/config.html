@@ -1173,18 +1173,28 @@ function loadData(append) {
     });
   }
 
+function runScanNow() {
+    if (!task) { loadData(false); return; }
+    apiPost('ScheduledTasks/Running/' + task.Id)
+      .then(function () {
+        setTimeout(function () { refreshTask(); loadData(false); }, 6000);
+        setTimeout(function () { refreshTask(); loadData(false); }, 30000);
+      })
+      .catch(function () { loadData(false); });
+  }
+  
 function revertValue(r) {
     if (!window.confirm('Undo the edit on "' + r.Field + '" for:\n\n'
         + (r.Artist ? r.Artist + ' — ' : '') + r.Item
-        + '\n\nThe original value returns on the next scan. Continue?')) { return; }
+        + '\n\nThe original value is restored by re-reading the file. Continue?')) { return; }
 
-      apiPost('AdvancedMetadataData/ClearOverride'
+    apiPost('AdvancedMetadataData/ClearOverride'
       + '?jellyfinId=' + encodeURIComponent(r.Id)
       + '&field=' + encodeURIComponent(r.Field)
       + '&oldValue=' + encodeURIComponent(r.OverrideOld || r.Value))
       .then(function () {
-        setStatus('dataStatus', 'ok', 'Edit removed. Run a scan to restore the original value.');
-        loadData(false);
+        setStatus('dataStatus', 'info', 'Reverted. Re-reading the file now — results refresh in a few seconds.');
+        runScanNow();
       })
       .catch(function (e) { setStatus('dataStatus', 'err', 'REVERT FAILED: ' + e.message); });
   }
@@ -1201,7 +1211,7 @@ function deleteValue(r) {
       + '&oldValue=' + encodeURIComponent(r.OverrideOld || r.Value)
       + '&newValue=')
       .then(function () {
-        setStatus('dataStatus', 'ok', 'Value removed from the index. Your file is unchanged.');
+      setStatus('dataStatus', 'ok', 'Value removed from the index. Your file is unchanged.');
         loadData(false);
       })
       .catch(function (e) { setStatus('dataStatus', 'err', 'DELETE FAILED: ' + e.message); });
@@ -1395,10 +1405,11 @@ function applyDiagVisibility() {
   $('btnResetOverrides').addEventListener('click', function () {
       if (!window.confirm('WARNING: This removes EVERY value you have edited or deleted across the whole index. '
           + 'All values will be restored from your files on the next scan. Mappings are not affected. Continue?')) { return; }
-      apiPost('AdvancedMetadataData/ClearAllOverrides').then(function (r) {
+     apiPost('AdvancedMetadataData/ClearAllOverrides').then(function (r) {
         var n = 0;
         try { var j = JSON.parse(r); n = j.Removed != null ? j.Removed : 0; } catch (e) { n = 0; }
-        setStatus('advancedStatus', 'ok', n + ' override(s) removed. Run a scan to restore the original values.');
+        setStatus('advancedStatus', 'info', n + ' override(s) removed. Re-reading files now.');
+        runScanNow();
       }).catch(function (e) { setStatus('advancedStatus', 'err', 'RESET FAILED: ' + e.message); });
     });
 }
