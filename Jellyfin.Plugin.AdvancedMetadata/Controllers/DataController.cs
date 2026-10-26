@@ -53,6 +53,7 @@ public class DataController : ControllerBase
     {
         var result = _store.BrowseField(field ?? string.Empty, q, kind, onlyOverrides,
             Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
@@ -69,7 +70,9 @@ public class DataController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
 
-        var result = _store.BrowseItem(name, kind, onlyOverrides, Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+        var result = _store.BrowseItem(name, kind, onlyOverrides,
+            Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
+
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
