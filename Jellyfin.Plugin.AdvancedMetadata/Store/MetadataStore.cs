@@ -14,7 +14,7 @@ public record FieldRow(string Name, string Display, string Hierarchy, int Items,
 
 public record OverrideRow(string JellyfinId, string Field, string OldValue, string NewValue, string CreatedUtc);
 
-public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value, bool IsOverride);
+public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value, bool IsOverride, bool IsDeleted, string OverrideOld);
 
 public class MetadataStore
 {
@@ -549,34 +549,51 @@ ORDER BY f.name;";
             return rows;
         });
 
+  private const string BrowseFrom = @"
+FROM (
+    SELECT i.jellyfin_id AS jellyfin_id, i.kind AS kind,
+           COALESCE(i.name, i.path, i.jellyfin_id) AS item,
+           COALESCE(i.artist, '') AS artist, COALESCE(i.album, '') AS album,
+           COALESCE(i.path, '') AS detail,
+           f.name AS field, v.value AS value,
+           CASE WHEN EXISTS (SELECT 1 FROM overrides o
+                             WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)
+                THEN 1 ELSE 0 END AS isoverride,
+           0 AS isdeleted,
+           COALESCE((SELECT o.old_value FROM overrides o
+                     WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value
+                     LIMIT 1), '') AS override_old
+    FROM vals v
+    JOIN items i ON i.id = v.item_id
+    JOIN fields f ON f.id = v.field_id
+    UNION ALL
+    SELECT i.jellyfin_id, i.kind,
+           COALESCE(i.name, i.path, i.jellyfin_id),
+           COALESCE(i.artist, ''), COALESCE(i.album, ''),
+           COALESCE(i.path, ''),
+           f.name, o.old_value,
+           1, 1, o.old_value
+    FROM overrides o
+    JOIN items i ON i.jellyfin_id = o.jellyfin_id
+    JOIN fields f ON f.name = o.field
+    WHERE o.new_value = ''
+) x";
+
     private (List<BrowseRow> Rows, int Total) Run(string where, List<(string K, object V)> args, int limit, int offset)
         => Read(c =>
         {
             int total;
             using (var cnt = c.CreateCommand())
             {
-                cnt.CommandText = $@"SELECT COUNT(*) FROM vals v
-JOIN items i ON i.id = v.item_id
-JOIN fields f ON f.id = v.field_id
-WHERE {where};";
+                cnt.CommandText = "SELECT COUNT(*) " + BrowseFrom + " WHERE " + where + ";";
                 foreach (var a in args) { cnt.Parameters.AddWithValue(a.K, a.V); }
                 total = Convert.ToInt32(cnt.ExecuteScalar(), CultureInfo.InvariantCulture);
             }
 
             var rows = new List<BrowseRow>();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = $@"
-SELECT i.jellyfin_id, i.kind,
-       COALESCE(i.name, i.path, i.jellyfin_id),
-       COALESCE(i.artist, ''), COALESCE(i.album, ''), COALESCE(i.path, ''),
-        f.name, v.value,
-       CASE WHEN EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value) THEN 1 ELSE 0 END
-FROM vals v
-JOIN items i ON i.id = v.item_id
-JOIN fields f ON f.id = v.field_id
-WHERE {where}
-ORDER BY COALESCE(i.artist,''), COALESCE(i.name, i.path), f.name, v.value
-LIMIT $lim OFFSET $off;";
+            cmd.CommandText = "SELECT jellyfin_id, kind, item, artist, album, detail, field, value, isoverride, isdeleted, override_old "
+                + BrowseFrom + " WHERE " + where + " ORDER BY artist, item, field, value LIMIT $lim OFFSET $off;";
             foreach (var a in args) { cmd.Parameters.AddWithValue(a.K, a.V); }
             cmd.Parameters.AddWithValue("$lim", limit);
             cmd.Parameters.AddWithValue("$off", offset);
@@ -584,11 +601,12 @@ LIMIT $lim OFFSET $off;";
             while (r.Read())
             {
                 rows.Add(new BrowseRow(
-                    r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
-                    r.GetString(4), r.GetString(5), r.GetString(6), r.GetString(7), r.GetInt64(8) == 1));
+                    r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
+                    r.GetString(5), r.GetString(6), r.GetString(7),
+                    r.GetInt64(8) == 1, r.GetInt64(9) == 1, r.GetString(10)));
             }
 
-    return (rows, total);
+            return (rows, total);
         });
 
     private static (string Where, List<(string K, object V)> Args) TermWhere(string query)
@@ -605,7 +623,7 @@ LIMIT $lim OFFSET $off;";
         for (var i = 0; i < terms.Length; i++)
         {
             if (i > 0) { sb.Append(" AND "); }
-            sb.Append("(COALESCE(i.name,'')||' '||COALESCE(i.path,'')||' '||COALESCE(i.artist,'')||' '||COALESCE(i.album,'')) LIKE $t").Append(i);
+            sb.Append("(COALESCE(item,'')||' '||COALESCE(artist,'')||' '||COALESCE(album,'')||' '||COALESCE(detail,'')) LIKE $t").Append(i);
             args.Add(("$t" + i, "%" + terms[i] + "%"));
         }
 
@@ -617,32 +635,11 @@ LIMIT $lim OFFSET $off;";
     {
         var (where, args) = TermWhere(string.Empty);
         var parts = new List<string> { where };
-        if (!string.IsNullOrWhiteSpace(field))
-        {
-            parts.Add("f.name = $f");
-            args.Add(("$f", field.ToUpperInvariant()));
-        }
 
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            parts.Add("v.value LIKE $like");
-            args.Add(("$like", "%" + query + "%"));
-        }
-
-        if (!string.IsNullOrWhiteSpace(kind))
-        {
-        if (!string.IsNullOrWhiteSpace(kind))
-        {
-            parts.Add("i.kind = $k");
-            args.Add(("$k", kind));
-        }
-
-        if (onlyOverrides)
-        {
-            parts.Add("EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)");
-        }
-            args.Add(("$k", kind));
-        }
+        if (!string.IsNullOrWhiteSpace(field)) { parts.Add("field = $f"); args.Add(("$f", field.ToUpperInvariant())); }
+        if (!string.IsNullOrWhiteSpace(query)) { parts.Add("value LIKE $like"); args.Add(("$like", "%" + query + "%")); }
+        if (!string.IsNullOrWhiteSpace(kind)) { parts.Add("kind = $k"); args.Add(("$k", kind)); }
+        if (onlyOverrides) { parts.Add("(isoverride = 1 OR isdeleted = 1)"); }
 
         return Run(string.Join(" AND ", parts), args, limit, offset);
     }
@@ -650,17 +647,9 @@ LIMIT $lim OFFSET $off;";
     public (List<BrowseRow> Rows, int Total) BrowseItem(string query, string? kind, bool onlyOverrides, int limit, int offset)
     {
         var (where, args) = TermWhere(query);
-        if (!string.IsNullOrWhiteSpace(kind))
-        {
-            where = where + " AND i.kind = $k";
-            args.Add(("$k", kind));
-        }
-
-        if (onlyOverrides)
-        {
-            where = where + " AND EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)";
-        }
-
-        return Run(where, args, limit, offset);
+        var parts = new List<string> { where };
+        if (!string.IsNullOrWhiteSpace(kind)) { parts.Add("kind = $k"); args.Add(("$k", kind)); }
+        if (onlyOverrides) { parts.Add("(isoverride = 1 OR isdeleted = 1)"); }
+        return Run(string.Join(" AND ", parts), args, limit, offset);
     }
 }
