@@ -1,4 +1,3 @@
-// Advanced Metadata scanner
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -72,14 +71,13 @@ public class ScanTask : IScheduledTask
         cfg.LastScanTotal = 0;
         cfg.LastScanType = full ? "Full Scan" : "Incremental Scan";
         cfg.LastScanStatus = "Running";
+        cfg.LastScanStage = "Starting";
         cfg.LastScanSummary = string.Empty;
         plugin.UpdateConfiguration(cfg);
 
         var mappings = cfg.Mappings.Where(m => !string.IsNullOrWhiteSpace(m.SourceTag)).ToList();
         var knownIds = cfg.KnownMappingIds.ToHashSet();
 
-        // Mappings this scan has never covered. Keyed on the mapping id, so deleting and
-        // re-adding a mapping always triggers a backfill.
         var backfill = mappings
             .Where(m => !knownIds.Contains(m.Id))
             .Select(m => m.SourceTag)
@@ -90,11 +88,11 @@ public class ScanTask : IScheduledTask
         plugin.UpdateConfiguration(cfg);
 
         void Stage(string s)
-            {
-                cfg.LastScanStage = s;
-                plugin.UpdateConfiguration(cfg);
-                _logger.LogInformation("Advanced Metadata: stage -> {Stage}", s);
-            }
+        {
+            cfg.LastScanStage = s;
+            plugin.UpdateConfiguration(cfg);
+            _logger.LogInformation("Advanced Metadata: stage -> {Stage}", s);
+        }
 
         try
         {
@@ -140,7 +138,7 @@ public class ScanTask : IScheduledTask
 
                     if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
 
-                if (done % CommitEvery == 0)
+                    if (done % CommitEvery == 0)
                     {
                         _store.CommitBatch();
                         cfg.LastScanItems = done;
@@ -190,6 +188,20 @@ public class ScanTask : IScheduledTask
                     var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
                     var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
 
+                    // Last resort: read the file's own tags. Jellyfin occasionally has an item
+                    // whose artist fields are empty even though the file carries the tag.
+                    if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(album))
+                    {
+                        var fileArtist = ReadTag(path, "ARTIST", delims).FirstOrDefault()
+                                      ?? ReadTag(path, "ALBUMARTIST", delims).FirstOrDefault();
+                        if (string.IsNullOrWhiteSpace(artist)) { artist = fileArtist; }
+                        if (string.IsNullOrWhiteSpace(albumArtist)) { albumArtist = fileArtist; }
+                        if (string.IsNullOrWhiteSpace(album))
+                        {
+                            album = ReadTag(path, "ALBUM", delims).FirstOrDefault();
+                        }
+                    }
+
                     long itemId;
                     try
                     {
@@ -218,15 +230,17 @@ public class ScanTask : IScheduledTask
                             var tid = _store.UpsertItem(albumId.Value.ToString("N"), "MusicAlbum",
                                 album, albumArtist, album, null, 0, 0);
                             _store.AddValues(tid, m.SourceTag, vals);
+                            _store.ApplyOverrides(albumId.Value.ToString("N"), m.SourceTag);
                         }
 
                         if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
                         {
                             foreach (var a in GetArtists(item))
                             {
-                                var tid = _store.UpsertItem(a.Id.ToString("N"), "MusicArtist",
-                                    a.Name, a.Name, null, null, 0, 0);
+                                var aid = a.Id.ToString("N");
+                                var tid = _store.UpsertItem(aid, "MusicArtist", a.Name, a.Name, null, null, 0, 0);
                                 _store.AddValues(tid, m.SourceTag, vals);
+                                _store.ApplyOverrides(aid, m.SourceTag);
                             }
                         }
                     }
@@ -237,7 +251,7 @@ public class ScanTask : IScheduledTask
                 _store.EndBatch();
             }
 
-        progress.Report(100);
+            progress.Report(100);
             cfg.LastScanStage = "Complete";
             cfg.KnownMappingIds = mappings.Select(m => m.Id).ToList();
             cfg.LastScanItems = done;
