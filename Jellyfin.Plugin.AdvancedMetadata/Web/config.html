@@ -339,6 +339,11 @@
       Jellyfin's database are never modified.
     </p>
 
+    <div class="am-status info show" style="max-width:620px">
+      A standard scan only picks up <strong>changed</strong> files. If you have just added a new mapping,
+      tick <strong>Full Rescan</strong> below — otherwise the new mapping will have nothing to show.
+    </div>
+    
     <div class="am-actions">
       <button id="btnScan" class="am-btn am-btn-primary">Start Scan</button>
       <button id="btnCancel" class="am-btn am-btn-danger">Stop Scan</button>
@@ -407,7 +412,7 @@
       with multiple values. Users with custom delimiters can change them here. Default: / | ; :</div>
     </div>
     <div class="am-actions">
-      <button id="btnSaveDelims" class="am-btn">Save Delimiters</button>
+      <button id="btnSaveDelims" class="am-btn am-btn-primary">Save Delimiters</button>
     </div>
     <div id="delimStatus" class="am-status"></div>
 
@@ -995,7 +1000,22 @@ function clearDataResults() {
       var b = document.createElement('td'); b.textContent = r.Item; b.title = r.Detail || r.Item; tr.appendChild(b);
       var c = document.createElement('td'); c.textContent = KIND_LABEL[r.Kind] || r.Kind; tr.appendChild(c);
       var d = document.createElement('td'); d.className = 'am-mono'; d.textContent = r.Field; tr.appendChild(d);
-      var e = document.createElement('td'); e.textContent = r.Value; e.title = r.Value; tr.appendChild(e);
+      var e = document.createElement('td'); e.title = r.Value;
+      e.appendChild(document.createTextNode(r.Value));
+      if (r.IsOverride) {
+        var mark = document.createElement('span');
+        mark.textContent = ' ●';
+        mark.title = 'Edited — overrides the file';
+        mark.style.color = '#e2a03f';
+        e.appendChild(mark);
+      }
+      e.appendChild(document.createTextNode(' '));
+      var eb = document.createElement('button');
+      eb.className = 'am-act';
+      eb.textContent = 'Edit';
+      eb.addEventListener('click', function () { editValue(r); });
+      e.appendChild(eb);
+      tr.appendChild(e);
       var f = document.createElement('td'); f.className = 'pathCol'; f.textContent = r.Detail || ''; f.title = r.Detail || ''; tr.appendChild(f);
       body.appendChild(tr);
     });
@@ -1109,6 +1129,25 @@ function loadData(append) {
     });
   }
 
+  function editValue(r) {
+    var msg = 'New value for "' + r.Field + '" on:\n\n'
+      + (r.Artist ? r.Artist + ' — ' : '') + r.Item
+      + '\n\nLeave blank to remove this value from the index.';
+    var nv = window.prompt(msg, r.Value);
+    if (nv === null) { return; }
+
+    apiPost('AdvancedMetadataData/SetOverride'
+      + '?jellyfinId=' + encodeURIComponent(r.Id)
+      + '&field=' + encodeURIComponent(r.Field)
+      + '&oldValue=' + encodeURIComponent(r.Value)
+      + '&newValue=' + encodeURIComponent(nv.trim()))
+      .then(function () {
+        setStatus('dataStatus', 'ok', 'Value updated. Your file is unchanged.');
+        loadData(false);
+      })
+      .catch(function (e) { setStatus('dataStatus', 'err', 'UPDATE FAILED: ' + e.message); });
+  }
+  
   function wireData() {
     $('btnDataItem').addEventListener('click', function () { dataMode = 'item'; dataOffset = 0; loadData(false); });
     $('dataItem').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('btnDataItem').click(); } });
