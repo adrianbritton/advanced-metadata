@@ -181,20 +181,14 @@ public class ScanTask : IScheduledTask
                         continue;
                     }
 
-                var artist = ArtistNames(item);
-                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
-                    var album = GetStringProperty(item, "Album");
                     var albumId = ResolveAlbumId(item);
+                    var albumItem = albumId.HasValue ? _library.GetItemById(albumId.Value) : null;
 
-                    if (albumId.HasValue && (string.IsNullOrWhiteSpace(albumArtist) || string.IsNullOrWhiteSpace(album)))
-                    {
-                        var albumItem = _library.GetItemById(albumId.Value);
-                        if (albumItem is not null)
-                        {
-                            if (string.IsNullOrWhiteSpace(albumArtist)) { albumArtist = ArtistNames(albumItem); }
-                            if (string.IsNullOrWhiteSpace(album)) { album = albumItem.Name; }
-                        }
-                    }
+                    var artist = ArtistNames(item)
+                        ?? GetStringList(item, "AlbumArtists")
+                        ?? ArtistNames(albumItem);
+                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
+                    var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
 
                     long itemId;
                     try
