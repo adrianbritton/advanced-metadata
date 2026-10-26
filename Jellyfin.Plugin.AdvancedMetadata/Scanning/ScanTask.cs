@@ -216,6 +216,7 @@ public class ScanTask : IScheduledTask
                         if (vals.Count == 0) { continue; }
 
                         _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
+                        _store.ApplyOverrides(key, m.SourceTag);
                         values += vals.Count;
 
                         if (albumId.HasValue && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
