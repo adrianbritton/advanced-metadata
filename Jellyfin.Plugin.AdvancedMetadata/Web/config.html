@@ -432,10 +432,14 @@
 
     <div class="am-sep"></div>
 
-    <h3>Maintenance</h3>
+  <h3>Maintenance</h3>
     <div class="am-actions">
       <button id="btnRebuild" class="am-btn am-btn-danger">Rebuild Store</button>
     </div>
+    <div class="am-hint" style="max-width:620px">
+      Clears every indexed value but keeps your mappings. Run a scan afterwards.
+    </div>
+
     <div class="am-actions">
       <button id="btnResetOverrides" class="am-btn am-btn-danger">Reset All Data Overrides</button>
     </div>
@@ -443,9 +447,7 @@
       Removes <strong>every</strong> edit and deletion you have made to indexed values, and restores
       everything from your files on the next scan. Mappings are not affected.
     </div>
-    <div class="am-hint" style="max-width:620px">
-      Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
-    </div>
+
     <div id="advancedStatus" class="am-status"></div>
 
     <div class="am-sep"></div>
@@ -1048,12 +1050,14 @@ function clearDataResults() {
       eb.addEventListener('click', function () { editValue(r); });
       e.appendChild(eb);
       e.appendChild(document.createTextNode(' '));
+      if (!r.IsDeleted) {
       var db = document.createElement('button');
       db.className = 'am-act am-act-danger';
       db.textContent = 'Delete';
       db.title = 'Remove this value from the index (file unchanged)';
       db.addEventListener('click', function () { deleteValue(r); });
       e.appendChild(db);
+      }
       tr.appendChild(e);
       var f = document.createElement('td'); f.className = 'pathCol'; f.textContent = r.Detail || ''; f.title = r.Detail || ''; tr.appendChild(f);
       body.appendChild(tr);
@@ -1174,10 +1178,10 @@ function revertValue(r) {
         + (r.Artist ? r.Artist + ' — ' : '') + r.Item
         + '\n\nThe original value returns on the next scan. Continue?')) { return; }
 
-    apiPost('AdvancedMetadataData/ClearOverride'
+      apiPost('AdvancedMetadataData/ClearOverride'
       + '?jellyfinId=' + encodeURIComponent(r.Id)
       + '&field=' + encodeURIComponent(r.Field)
-      + '&oldValue=' + encodeURIComponent(r.Value))
+      + '&oldValue=' + encodeURIComponent(r.OverrideOld || r.Value))
       .then(function () {
         setStatus('dataStatus', 'ok', 'Edit removed. Run a scan to restore the original value.');
         loadData(false);
@@ -1194,7 +1198,7 @@ function deleteValue(r) {
     apiPost('AdvancedMetadataData/SetOverride'
       + '?jellyfinId=' + encodeURIComponent(r.Id)
       + '&field=' + encodeURIComponent(r.Field)
-      + '&oldValue=' + encodeURIComponent(r.Value)
+      + '&oldValue=' + encodeURIComponent(r.OverrideOld || r.Value)
       + '&newValue=')
       .then(function () {
         setStatus('dataStatus', 'ok', 'Value removed from the index. Your file is unchanged.');
@@ -1213,7 +1217,7 @@ function deleteValue(r) {
     apiPost('AdvancedMetadataData/SetOverride'
       + '?jellyfinId=' + encodeURIComponent(r.Id)
       + '&field=' + encodeURIComponent(r.Field)
-      + '&oldValue=' + encodeURIComponent(r.Value)
+      + '&oldValue=' + encodeURIComponent(r.OverrideOld || r.Value)
       + '&newValue=' + encodeURIComponent(nv.trim()))
       .then(function () {
         setStatus('dataStatus', 'ok', 'Value updated. Your file is unchanged.');
