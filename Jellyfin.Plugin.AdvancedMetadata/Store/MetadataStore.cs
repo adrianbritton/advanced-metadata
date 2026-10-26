@@ -438,6 +438,60 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         }
     }
 
+    /// <summary>Marks an item so the next scan re-reads it, whatever else has changed.</summary>
+    public void InvalidateItem(string jellyfinId)
+        => Write(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "UPDATE items SET mtime = -1 WHERE jellyfin_id=$j;";
+            cmd.Parameters.AddWithValue("$j", jellyfinId);
+            cmd.ExecuteNonQuery();
+        });
+
+    /// <summary>Removes one override and forces the item to be re-read on the next scan.</summary>
+    public int ClearOverride(string jellyfinId, string field, string oldValue)
+        => Write(c =>
+        {
+            int n;
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM overrides WHERE jellyfin_id=$j AND field=$f AND old_value=$o;";
+                cmd.Parameters.AddWithValue("$j", jellyfinId);
+                cmd.Parameters.AddWithValue("$f", field.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("$o", oldValue ?? string.Empty);
+                n = cmd.ExecuteNonQuery();
+            }
+
+            using (var inv = c.CreateCommand())
+            {
+                inv.CommandText = "UPDATE items SET mtime = -1 WHERE jellyfin_id=$j;";
+                inv.Parameters.AddWithValue("$j", jellyfinId);
+                inv.ExecuteNonQuery();
+            }
+
+            return n;
+        });
+
+    /// <summary>Wipes every override and forces a full re-read on the next scan.</summary>
+    public int ClearAllOverrides()
+        => Write(c =>
+        {
+            int n;
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM overrides;";
+                n = cmd.ExecuteNonQuery();
+            }
+
+            using (var inv = c.CreateCommand())
+            {
+                inv.CommandText = "UPDATE items SET mtime = -1;";
+                inv.ExecuteNonQuery();
+            }
+
+            return n;
+        });
+    
     public List<OverrideRow> ListOverrides()
         => Read(c =>
         {
@@ -559,7 +613,7 @@ LIMIT $lim OFFSET $off;";
         return (sb.ToString(), args);
     }
 
-    public (List<BrowseRow> Rows, int Total) BrowseField(string field, string? query, string? kind, int limit, int offset)
+    public (List<BrowseRow> Rows, int Total) BrowseField(string field, string? query, string? kind, bool onlyOverrides, int limit, int offset)
     {
         var (where, args) = TermWhere(string.Empty);
         var parts = new List<string> { where };
@@ -577,20 +631,34 @@ LIMIT $lim OFFSET $off;";
 
         if (!string.IsNullOrWhiteSpace(kind))
         {
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
             parts.Add("i.kind = $k");
+            args.Add(("$k", kind));
+        }
+
+        if (onlyOverrides)
+        {
+            parts.Add("EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)");
+        }
             args.Add(("$k", kind));
         }
 
         return Run(string.Join(" AND ", parts), args, limit, offset);
     }
 
-    public (List<BrowseRow> Rows, int Total) BrowseItem(string query, string? kind, int limit, int offset)
+    public (List<BrowseRow> Rows, int Total) BrowseItem(string query, string? kind, bool onlyOverrides, int limit, int offset)
     {
         var (where, args) = TermWhere(query);
         if (!string.IsNullOrWhiteSpace(kind))
         {
             where = where + " AND i.kind = $k";
             args.Add(("$k", kind));
+        }
+
+        if (onlyOverrides)
+        {
+            where = where + " AND EXISTS (SELECT 1 FROM overrides o WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)";
         }
 
         return Run(where, args, limit, offset);
