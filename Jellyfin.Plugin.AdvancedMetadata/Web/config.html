@@ -124,11 +124,11 @@
   }
 </style>
 
-  <div class="am-tabs" role="tablist">
+<div class="am-tabs" role="tablist">
     <button class="am-tab" role="tab" data-tab="create"   aria-selected="true"  onclick="amShowTab('create')">Create Mapping</button>
-    <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false" onclick="amShowTab('manage')">Manage Mappings</button>
-    <button class="am-tab" role="tab" data-tab="data"     aria-selected="false" onclick="amShowTab('data')">Data Search</button>
     <button class="am-tab" role="tab" data-tab="scan"     aria-selected="false" onclick="amShowTab('scan')">Scan Mappings</button>
+    <button class="am-tab" role="tab" data-tab="data"     aria-selected="false" onclick="amShowTab('data')">Manage Data</button>
+    <button class="am-tab" role="tab" data-tab="manage"   aria-selected="false" onclick="amShowTab('manage')">Manage Mappings</button>
     <button class="am-tab" role="tab" data-tab="advanced" aria-selected="false" onclick="amShowTab('advanced')">Advanced</button>
   </div>
 
@@ -246,10 +246,17 @@
 
   <!-- ============ DATA SEARCH ============ -->
   <div class="am-panel" data-panel="data">
-    <h2>Data Search</h2>
+    <h2>Manage Data</h2>
     <p style="max-width:680px">
-      This tool displays the data that has successfully been mapped from plugin scans. It is data
-      stored in the plugin's internal database and is <strong>NOT</strong> in Jellyfin's core.
+  <p style="max-width:680px">
+      This tool shows the data that has been mapped from plugin scans. It is stored in the plugin's
+      internal database and is <strong>NOT</strong> in Jellyfin's core.
+    </p>
+    <p style="max-width:680px">
+      Every result row has <strong>Edit</strong> and <strong>Delete</strong> links. Editing or deleting
+      a value changes only the plugin's index — <strong>your audio files are never modified</strong>,
+      and the change survives future scans.
+    </p>
     </p>
 
     <h3>Search by content item</h3>
@@ -847,7 +854,11 @@ function renderManage() {
         save.textContent = 'Save';
         save.addEventListener('click', function () {
           m.DisplayName = $('editName').value.trim() || m.SourceTag;
+          var originalHierarchy = m.Hierarchy;
           m.Hierarchy = $('editHier').value;
+          if (cfg.KnownMappingIds && cfg.KnownMappingIds.indexOf(m.Id) > -1 && m.Hierarchy !== originalHierarchy) {
+            cfg.KnownMappingIds = cfg.KnownMappingIds.filter(function (x) { return x !== m.Id; });
+          }
           saveConfig(cfg).then(function () {
             return apiPost('AdvancedMetadataData/SyncFields');
           }).then(function () {
@@ -1015,6 +1026,13 @@ function clearDataResults() {
       eb.textContent = 'Edit';
       eb.addEventListener('click', function () { editValue(r); });
       e.appendChild(eb);
+      e.appendChild(document.createTextNode(' '));
+      var db = document.createElement('button');
+      db.className = 'am-act am-act-danger';
+      db.textContent = 'Delete';
+      db.title = 'Remove this value from the index (file unchanged)';
+      db.addEventListener('click', function () { deleteValue(r); });
+      e.appendChild(db);
       tr.appendChild(e);
       var f = document.createElement('td'); f.className = 'pathCol'; f.textContent = r.Detail || ''; f.title = r.Detail || ''; tr.appendChild(f);
       body.appendChild(tr);
@@ -1129,6 +1147,24 @@ function loadData(append) {
     });
   }
 
+function deleteValue(r) {
+    var msg = 'Remove "' + r.Value + '" from "' + r.Field + '" on:\n\n'
+      + (r.Artist ? r.Artist + ' — ' : '') + r.Item
+      + '\n\nYour file is not changed. Continue?';
+    if (!window.confirm(msg)) { return; }
+
+    apiPost('AdvancedMetadataData/SetOverride'
+      + '?jellyfinId=' + encodeURIComponent(r.Id)
+      + '&field=' + encodeURIComponent(r.Field)
+      + '&oldValue=' + encodeURIComponent(r.Value)
+      + '&newValue=')
+      .then(function () {
+        setStatus('dataStatus', 'ok', 'Value removed from the index. Your file is unchanged.');
+        loadData(false);
+      })
+      .catch(function (e) { setStatus('dataStatus', 'err', 'DELETE FAILED: ' + e.message); });
+  }
+  
   function editValue(r) {
     var msg = 'New value for "' + r.Field + '" on:\n\n'
       + (r.Artist ? r.Artist + ' — ' : '') + r.Item
