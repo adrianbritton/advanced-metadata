@@ -182,7 +182,10 @@ public class ScanTask : IScheduledTask
                     }
 
                     var artist = GetStringList(item, "Artists");
-                    var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
+                    var albumArtist = GetStringList(item, "AlbumArtists")
+                        ?? GetStringList(item, "Artists")
+                        ?? GetStringProperty(item, "AlbumArtist")
+                        ?? artist;
                     var album = GetStringProperty(item, "Album");
                     var albumId = ResolveAlbumId(item);
 
