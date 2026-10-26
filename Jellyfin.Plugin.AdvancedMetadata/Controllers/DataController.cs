@@ -57,7 +57,7 @@ public class DataController : ControllerBase
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride, v.IsDeleted, v.OverrideOld });
         }
 
         return Ok(new { Total = result.Total, Rows = rows });
@@ -76,7 +76,7 @@ public class DataController : ControllerBase
         var rows = new List<object>();
         foreach (var v in result.Rows)
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride });
+            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride, v.IsDeleted, v.OverrideOld });
         }
 
         return Ok(new { Total = result.Total, Rows = rows });
