@@ -106,9 +106,17 @@
                border: 1px solid #30363d; border-radius: 6px; max-width: 260px;
                font-family: inherit; font-size: 14px; }
     #dataTable.hidepath .pathCol { display: none; }
-  .am-act { background: none; border: 0; padding: 0; color: #58a6ff; cursor: pointer;
-            font-size: .9em; font-family: inherit; }
-  .am-act:hover { text-decoration: underline; }
+.am-act { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 5px;
+            padding: 5px 11px; font-size: .82em; font-family: inherit; cursor: pointer; }
+  .am-act:hover { background: #2d333b; }
+  .am-act-danger { background: #3a1f1f; border-color: #6b3030; color: #ffb3ae; }
+  .am-act-danger:hover { background: #4a2626; }
+  .am-btn-danger { background: #b5651d; border-color: #b5651d; color: #ffffff; }
+  .am-btn-danger:hover { background: #c9762b; }
+  @media (max-width: 760px) {
+    .am-hide-sm { display: none; }
+    #AdvancedMetadataConfigPage { padding: 14px 12px 40px; }
+  }
   #manageRows input[type="text"], #manageRows select {
     width: 100%; box-sizing: border-box; background: #0a0d12; color: #e6edf3;
     border: 1px solid #52b54b; border-radius: 4px; padding: 5px 7px; font-size: 14px;
@@ -216,10 +224,10 @@
       <thead>
         <tr>
           <th style="width:22%">Tag</th>
-          <th style="width:28%">Display name</th>
-          <th style="width:22%">Applies to</th>
-          <th style="width:14%">Created</th>
-          <th style="width:14%"></th>
+          <th style="width:26%">Display name</th>
+          <th style="width:20%">Applies to</th>
+          <th class="am-hide-sm" style="width:12%">Created</th>
+          <th style="width:20%">Actions</th>
         </tr>
       </thead>
       <tbody id="manageRows"></tbody>
@@ -227,7 +235,7 @@
     <div id="manageEmpty" class="am-empty">No mappings yet. Create one on the Create Mapping tab.</div>
 
     <div class="am-actions" style="margin-top:26px">
-      <button id="btnDeleteAll" class="am-btn">Delete All Mappings</button>
+      <button id="btnDeleteAll" class="am-btn am-btn-danger">Delete All Mappings</button>
     </div>
     <div class="am-hint" style="max-width:620px">
       Deleting a mapping removes the mapping <strong>and</strong> its indexed values. Deleting all
@@ -262,7 +270,7 @@
       <select id="dataField"><option value="">— All mappings —</option></select>
     </div>
 <div class="am-field">
-      <div class="am-label">Level</div>
+      <div class="am-label">Hierarchy</div>
       <select id="dataKind">
         <option value="">— All levels —</option>
         <option value="Audio">Tracks only</option>
@@ -318,7 +326,7 @@
 
     <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
     <div class="am-actions">
-      <button id="btnMore" class="am-btn" style="display:none">Show more</button>
+      <button id="btnMore" class="am-btn am-btn-primary" style="display:none">Show more</button>
     </div>
   </div>
 
@@ -333,7 +341,7 @@
 
     <div class="am-actions">
       <button id="btnScan" class="am-btn am-btn-primary">Start Scan</button>
-      <button id="btnCancel" class="am-btn">Stop Scan</button>
+      <button id="btnCancel" class="am-btn am-btn-danger">Stop Scan</button>
     </div>
     <div id="scanStatus" class="am-status"></div>
 
@@ -407,7 +415,7 @@
 
     <h3>Maintenance</h3>
     <div class="am-actions">
-      <button id="btnRebuild" class="am-btn">Rebuild Store</button>
+      <button id="btnRebuild" class="am-btn am-btn-danger">Rebuild Store</button>
     </div>
     <div class="am-hint" style="max-width:620px">
       Rebuild Store clears every indexed value but keeps your mappings. Run a scan afterwards.
@@ -798,11 +806,11 @@ function renderManage() {
       var tr = document.createElement('tr');
       var editing = (m.Id === editingId);
 
-      if (editing) {
-        var tdTag = document.createElement('td');
-        tdTag.className = 'am-mono'; tdTag.textContent = m.SourceTag;
-        tr.appendChild(tdTag);
+      var tdTag = document.createElement('td');
+      tdTag.className = 'am-mono'; tdTag.textContent = m.SourceTag; tdTag.title = m.SourceTag;
+      tr.appendChild(tdTag);
 
+      if (editing) {
         var tdName = document.createElement('td');
         var nameInput = document.createElement('input');
         nameInput.type = 'text';
@@ -816,50 +824,45 @@ function renderManage() {
         hierSel.id = 'editHier';
         ['songs', 'songs_albums', 'albums', 'songs_albums_artists'].forEach(function (h) {
           var o = document.createElement('option');
-          o.value = h;
-          o.textContent = HIER[h];
+          o.value = h; o.textContent = HIER[h];
           if (h === m.Hierarchy) { o.selected = true; }
           hierSel.appendChild(o);
         });
         tdHier.appendChild(hierSel);
         tr.appendChild(tdHier);
 
-        var tdCreated = document.createElement('td');
-        tdCreated.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
-        tr.appendChild(tdCreated);
+        var tdC1 = document.createElement('td');
+        tdC1.className = 'am-hide-sm';
+        tdC1.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
+        tr.appendChild(tdC1);
 
-        var tdAct = document.createElement('td');
+        var tdA = document.createElement('td');
         var save = document.createElement('button');
         save.className = 'am-act';
         save.textContent = 'Save';
         save.addEventListener('click', function () {
           m.DisplayName = $('editName').value.trim() || m.SourceTag;
           m.Hierarchy = $('editHier').value;
-         saveConfig(cfg).then(function () {
+          saveConfig(cfg).then(function () {
             return apiPost('AdvancedMetadataData/SyncFields');
           }).then(function () {
             editingId = null;
             renderManage();
             refreshDataFields();
-            setStatus('manageStatus', 'ok',
-              'Mapping updated. Run a scan to apply a hierarchy change.');
+            setStatus('manageStatus', 'ok', 'Mapping updated. Run a scan to apply a hierarchy change.');
           }).catch(function (e) { setStatus('manageStatus', 'err', 'SAVE FAILED: ' + e.message); });
         });
 
         var cancel = document.createElement('button');
         cancel.className = 'am-act';
         cancel.textContent = 'Cancel';
-        cancel.style.marginLeft = '10px';
+        cancel.style.marginLeft = '6px';
         cancel.addEventListener('click', function () { editingId = null; renderManage(); });
 
-        tdAct.appendChild(save);
-        tdAct.appendChild(cancel);
-        tr.appendChild(tdAct);
+        tdA.appendChild(save);
+        tdA.appendChild(cancel);
+        tr.appendChild(tdA);
       } else {
-        var tdTag2 = document.createElement('td');
-        tdTag2.className = 'am-mono'; tdTag2.textContent = m.SourceTag; tdTag2.title = m.SourceTag;
-        tr.appendChild(tdTag2);
-
         var tdName2 = document.createElement('td');
         tdName2.textContent = m.DisplayName; tdName2.title = m.DisplayName;
         tr.appendChild(tdName2);
@@ -868,23 +871,21 @@ function renderManage() {
         tdHier2.textContent = HIER[m.Hierarchy] || m.Hierarchy;
         tr.appendChild(tdHier2);
 
-        var tdCreated2 = document.createElement('td');
-        tdCreated2.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
-        tr.appendChild(tdCreated2);
+        var tdC2 = document.createElement('td');
+        tdC2.className = 'am-hide-sm';
+        tdC2.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
+        tr.appendChild(tdC2);
 
-        var tdAct2 = document.createElement('td');
+        var tdA2 = document.createElement('td');
         var edit = document.createElement('button');
         edit.className = 'am-act';
         edit.textContent = 'Edit';
         edit.addEventListener('click', function () { editingId = m.Id; renderManage(); });
 
-        var sep = document.createElement('span');
-        sep.textContent = ' · ';
-        sep.style.opacity = '.5';
-
         var del = document.createElement('button');
-        del.className = 'am-link am-link-danger';
+        del.className = 'am-act am-act-danger';
         del.textContent = 'Delete';
+        del.style.marginLeft = '6px';
         del.addEventListener('click', function () {
           if (!window.confirm('WARNING: Removing this mapping will also delete all indexed values for "'
               + m.SourceTag + '" from the plugin index. Your audio files and Jellyfin are not touched. Continue?')) { return; }
@@ -903,10 +904,9 @@ function renderManage() {
             .catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
         });
 
-        tdAct2.appendChild(edit);
-        tdAct2.appendChild(sep);
-        tdAct2.appendChild(del);
-        tr.appendChild(tdAct2);
+        tdA2.appendChild(edit);
+        tdA2.appendChild(del);
+        tr.appendChild(tdA2);
       }
 
       body.appendChild(tr);
