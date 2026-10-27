@@ -1488,7 +1488,7 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.10.4 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.10.5 : per-row updating UX ===== -->
 <style>
   tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
   tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
@@ -1497,8 +1497,8 @@ function applyDiagVisibility() {
   tr.am-row-updating button, tr.am-row-updating a { opacity: .5; }
   tr.am-row-updating .am-pressed { opacity: 1 !important; font-weight: 600; animation: amPulse 1s ease-in-out infinite; }
   @keyframes amPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
-  tr.am-row-done > td { animation: amRowDone 1100ms ease-out; }
-  @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.4); } 100% { background-color: transparent; } }
+  tr.am-row-done > td { animation: amRowDone 1400ms ease-out; }
+  @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.42); } 100% { background-color: transparent; } }
   tr.am-row-fade { opacity: 0 !important; transition: opacity .6s ease; }
 </style>
 <script>
@@ -1562,22 +1562,23 @@ function applyDiagVisibility() {
         e[i].removeAttribute("data-am-was");
       }
     }
-    function markPressed(el, act) {
+    function tag(el, txt) {
       if (!el || !el.isConnected || el.classList.contains("am-pressed")) return false;
-      if (actOf(el) !== act) return false;
       el.setAttribute("data-am-label", labelOf(el));
       el.classList.add("am-pressed");
-      var txt = (act === "save") ? "Saving…" : "Updating…";
       if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
       return true;
     }
     function pressLabel(tr, act, preferred) {
-      if (markPressed(preferred, act)) return;
+      var txt = (act === "save") ? "Saving…" : "Updating…";
+      var i;
+      if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return; }
       var e = els(tr);
-      for (var i = 0; i < e.length; i++) if (markPressed(e[i], act)) return;
-      if (act === "save" || act === "cancel") {
+      for (i = 0; i < e.length; i++) if (actOf(e[i]) === act) { if (tag(e[i], txt)) return; }
+      if (act === "save") {
+        for (i = 0; i < e.length; i++) if (actOf(e[i]) === "edit") { if (tag(e[i], txt)) return; }
         var all = document.querySelectorAll(SEL);
-        for (var j = 0; j < all.length; j++) if (markPressed(all[j], act)) return;
+        for (i = 0; i < all.length; i++) if (actOf(all[i]) === act) { if (tag(all[i], txt)) return; }
       }
     }
     function restoreLabels(tr) {
@@ -1651,18 +1652,36 @@ function applyDiagVisibility() {
       var r = findRow(sig);
       if (r) r.classList.remove("am-row-editing");
     }
+    function runningPending() {
+      for (var i = PENDING.length - 1; i >= 0; i--) if (PENDING[i].phase === "active") return PENDING[i];
+      return null;
+    }
     function resolveTarget(btn, act) {
-      if ((act === "save" || act === "cancel") && EDITING.length === 1) {
-        var r0 = findRow(EDITING[0].sig);
-        if (r0) return { tr: r0, sig: EDITING[0].sig, pressEl: btn };
+      if (act === "save" || act === "cancel") {
+        if (EDITING.length) {
+          var ed = EDITING[EDITING.length - 1];
+          var r0 = findRow(ed.sig);
+          if (r0) return { tr: r0, sig: ed.sig, pressEl: btn };
+        }
       }
       var tr = btn.closest ? btn.closest("tr") : null;
       if (!tr) return null;
       if (isClone(tr)) tr = findRow(sigOf(tr)) || tr;
       var sig = sigOf(tr);
-      if (!sig && EDITING.length === 1) { sig = EDITING[0].sig; tr = findRow(sig) || tr; }
+      if (!sig && EDITING.length) { sig = EDITING[EDITING.length - 1].sig; tr = findRow(sig) || tr; }
       if (!sig) return null;
       return { tr: tr, sig: sig, pressEl: btn };
+    }
+    function abort(pe) {
+      pe.phase = "done";
+      if (pe.row && pe.row.isConnected) {
+        pe.row.classList.remove("am-row-updating");
+        restoreLabels(pe.row);
+        enableRow(pe.row);
+      }
+      if (pe.clone && pe.clone.parentNode) pe.clone.parentNode.removeChild(pe.clone);
+      pe.clone = null;
+      drop(pe);
     }
     function settle(e) {
       try {
@@ -1678,7 +1697,7 @@ function applyDiagVisibility() {
           if (live && stable >= 6 && Date.now() - t0 > 1500) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
             e.clone = null;
-            setTimeout(function () { if (live.isConnected) live.classList.remove("am-row-done"); }, 1100);
+            setTimeout(function () { if (live.isConnected) live.classList.remove("am-row-done"); }, 1400);
             e.phase = "done"; drop(e); return;
           }
           if (Date.now() - t0 > 5000) {
@@ -1726,6 +1745,18 @@ function applyDiagVisibility() {
         var act = actOf(btn);
         if (!act) return;
         watch();
+
+        if (act === "cancel") {
+          var ab = runningPending();
+          if (ab) { abort(ab); return; }
+          if (EDITING.length) { untick(EDITING[EDITING.length - 1].sig); return; }
+          return;
+        }
+        if (act === "save") {
+          var run = runningPending();
+          if (run) { requestAnimationFrame(function () { try { paint(run.row, run); } catch (x) {} }); return; }
+        }
+
         var t = resolveTarget(btn, act);
         if (!t) return;
         var sig = t.sig, tr = t.tr;
@@ -1733,11 +1764,6 @@ function applyDiagVisibility() {
         if (act === "edit") {
           untick(sig); EDITING.push({ sig: sig });
           requestAnimationFrame(function () { try { tr.classList.add("am-row-editing"); } catch (x) {} });
-          return;
-        }
-        if (act === "cancel") {
-          untick(sig);
-          requestAnimationFrame(function () { try { tr.classList.remove("am-row-editing"); } catch (x) {} });
           return;
         }
 
@@ -1751,13 +1777,14 @@ function applyDiagVisibility() {
         PENDING.push(e);
         requestAnimationFrame(function () { try { paint(tr, e); } catch (x) {} });
 
+        var noBusyLimit = (act === "save") ? 3500 : 7000;
         var t0 = Date.now(), sawBusy = false, idle = 0;
         (function tick() {
           if (e.phase !== "active") return;
           var el = Date.now() - t0;
           var busy = pageSaysBusy() || window.__amScanBusy === true;
           if (busy) { sawBusy = true; idle = 0; } else if (sawBusy) { idle++; }
-          if ((sawBusy && idle >= 2 && el > 1500) || (!sawBusy && el > 7000) || el > 25000) { settle(e); return; }
+          if ((sawBusy && idle >= 2 && el > 1500) || (!sawBusy && el > noBusyLimit) || el > 25000) { settle(e); return; }
           setTimeout(tick, 1200);
         })();
       } catch (x) {}
@@ -1765,6 +1792,6 @@ function applyDiagVisibility() {
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.10.4 ===== -->
+<!-- ===== end 0.3.10.5 ===== -->
   
 </div>
