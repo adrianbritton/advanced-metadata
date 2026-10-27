@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         AddColumn(c, "items", "name", "TEXT");
         AddColumn(c, "items", "artist", "TEXT");
         AddColumn(c, "items", "album", "TEXT");
+        AddColumn(c, "items", "parent_id", "TEXT");
 
         try
         {
@@ -452,6 +453,17 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         }
     }
 
+    /// <summary>Records which album a track belongs to, so album-level reverts can find its tracks.</summary>
+    public void SetItemParent(string jellyfinId, string parentId)
+        => Write(c =>
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "UPDATE items SET parent_id=$p WHERE jellyfin_id=$j;";
+            cmd.Parameters.AddWithValue("$p", parentId);
+            cmd.Parameters.AddWithValue("$j", jellyfinId);
+            cmd.ExecuteNonQuery();
+        });
+    
     /// <summary>Marks an item so the next scan re-reads it, whatever else has changed.</summary>
     public void InvalidateItem(string jellyfinId)
         => Write(c =>
@@ -462,7 +474,10 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
             cmd.ExecuteNonQuery();
         });
 
-    /// <summary>Removes one override and forces the item to be re-read on the next scan.</summary>
+/// <summary>
+    /// Removes one override, clears the affected values so the file can restore them,
+    /// and flags the item — plus any tracks belonging to it — for re-reading.
+    /// </summary>
     public int ClearOverride(string jellyfinId, string field, string oldValue)
         => Write(c =>
         {
@@ -476,9 +491,20 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
                 n = cmd.ExecuteNonQuery();
             }
 
+            var fid = FieldIdFor(c, field);
+            if (fid != 0)
+            {
+                using var del = c.CreateCommand();
+                del.CommandText = @"DELETE FROM vals WHERE field_id=$f AND item_id IN
+                                    (SELECT id FROM items WHERE jellyfin_id=$j OR parent_id=$j);";
+                del.Parameters.AddWithValue("$f", fid);
+                del.Parameters.AddWithValue("$j", jellyfinId);
+                del.ExecuteNonQuery();
+            }
+
             using (var inv = c.CreateCommand())
             {
-                inv.CommandText = "UPDATE items SET mtime = -1 WHERE jellyfin_id=$j;";
+                inv.CommandText = "UPDATE items SET mtime = -1 WHERE jellyfin_id=$j OR parent_id=$j;";
                 inv.Parameters.AddWithValue("$j", jellyfinId);
                 inv.ExecuteNonQuery();
             }
@@ -493,7 +519,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
             int n;
             using (var cmd = c.CreateCommand())
             {
-                cmd.CommandText = "DELETE FROM overrides;";
+                cmd.CommandText = "DELETE FROM overrides; DELETE FROM vals;";
                 n = cmd.ExecuteNonQuery();
             }
 
