@@ -133,10 +133,78 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
             Exec(c, "DELETE FROM vals WHERE rowid NOT IN (SELECT MIN(rowid) FROM vals GROUP BY item_id, field_id, value);");
             Exec(c, "CREATE UNIQUE INDEX IF NOT EXISTS ix_vals_uniq ON vals(item_id, field_id, value);");
         }
-
+        MergeChainedOverrides(c);
         SetMeta("schema", "0.6");
     }
 
+/// <summary>
+    /// One-time repair: editing an already-overridden value used to insert a second override
+    /// row instead of retargeting the first. Collapse those chains and re-derive affected values.
+    /// </summary>
+    private static void MergeChainedOverrides(SqliteConnection c)
+    {
+        using (var f = c.CreateCommand())
+        {
+            f.CommandText = "SELECT value FROM meta WHERE key='ovrmerge';";
+            var got = f.ExecuteScalar();
+            if (got is string s && s == "1") { return; }
+        }
+
+        Exec(c, @"
+UPDATE overrides
+SET new_value = (SELECT o2.new_value FROM overrides o2
+                 WHERE o2.jellyfin_id = overrides.jellyfin_id
+                   AND o2.field = overrides.field
+                   AND o2.old_value = overrides.new_value
+                 LIMIT 1)
+WHERE id = (SELECT MIN(id) FROM overrides o3
+            WHERE o3.jellyfin_id = overrides.jellyfin_id AND o3.field = overrides.field)
+  AND EXISTS (SELECT 1 FROM overrides o2
+              WHERE o2.jellyfin_id = overrides.jellyfin_id
+                AND o2.field = overrides.field
+                AND o2.old_value = overrides.new_value);");
+
+        Exec(c, @"
+DELETE FROM overrides
+WHERE id > (SELECT MIN(id) FROM overrides o3
+            WHERE o3.jellyfin_id = overrides.jellyfin_id AND o3.field = overrides.field)
+  AND EXISTS (SELECT 1 FROM overrides o2
+              WHERE o2.jellyfin_id = overrides.jellyfin_id
+                AND o2.field = overrides.field
+                AND o2.old_value = overrides.new_value);");
+
+        var pairs = new List<(string J, string F)>();
+        using (var sel = c.CreateCommand())
+        {
+            sel.CommandText = "SELECT DISTINCT jellyfin_id, field FROM overrides;";
+            using var r = sel.ExecuteReader();
+            while (r.Read()) { pairs.Add((r.GetString(0), r.GetString(1))); }
+        }
+
+        foreach (var (j, f) in pairs)
+        {
+            var fid = FieldIdFor(c, f);
+            if (fid == 0) { continue; }
+
+            using (var d = c.CreateCommand())
+            {
+                d.CommandText = "DELETE FROM vals WHERE field_id=$f AND item_id=(SELECT id FROM items WHERE jellyfin_id=$j);";
+                d.Parameters.AddWithValue("$f", fid);
+                d.Parameters.AddWithValue("$j", j);
+                d.ExecuteNonQuery();
+            }
+
+            ApplyInner(c, j, f);
+
+            using var inv = c.CreateCommand();
+            inv.CommandText = "UPDATE items SET mtime=-1 WHERE jellyfin_id=$j;";
+            inv.Parameters.AddWithValue("$j", j);
+            inv.ExecuteNonQuery();
+        }
+
+        Exec(c, "INSERT INTO meta(key,value) VALUES('ovrmerge','1') ON CONFLICT(key) DO UPDATE SET value='1';");
+    }
+    
     private static void Exec(SqliteConnection c, string sql)
     {
         using var cmd = c.CreateCommand();
@@ -379,20 +447,69 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
 
 /* ---------------- overrides ---------------- */
 
-    public void SetOverride(string jellyfinId, string field, string oldValue, string newValue)
+public void SetOverride(string jellyfinId, string field, string oldValue, string newValue)
         => Write(c =>
         {
-            using (var cmd = c.CreateCommand())
+            var f = field.ToUpperInvariant();
+            var oldV = oldValue ?? string.Empty;
+            var newV = newValue ?? string.Empty;
+
+            long? targetId = null;
+            string staleValue = string.Empty;
+
+            using (var sel = c.CreateCommand())
             {
+                sel.CommandText = "SELECT id, old_value, new_value FROM overrides WHERE jellyfin_id=$j AND field=$f ORDER BY id;";
+                sel.Parameters.AddWithValue("$j", jellyfinId);
+                sel.Parameters.AddWithValue("$f", f);
+                using var r = sel.ExecuteReader();
+                while (r.Read())
+                {
+                    var id = r.GetInt64(0);
+                    var ov = r.GetString(1);
+                    var nv = r.GetString(2);
+                    if (targetId is null && nv == oldV) { targetId = id; staleValue = nv; }
+                    else if (targetId is null && ov == oldV) { targetId = id; staleValue = nv; }
+                }
+            }
+
+            if (targetId is long tid)
+            {
+                using var upd = c.CreateCommand();
+                upd.CommandText = "UPDATE overrides SET new_value=$n, created_utc=$d WHERE id=$id;";
+                upd.Parameters.AddWithValue("$n", newV);
+                upd.Parameters.AddWithValue("$d", DateTime.UtcNow.ToString("o"));
+                upd.Parameters.AddWithValue("$id", tid);
+                upd.ExecuteNonQuery();
+            }
+            else
+            {
+                using var cmd = c.CreateCommand();
                 cmd.CommandText = @"INSERT INTO overrides(jellyfin_id, field, old_value, new_value, created_utc)
                                     VALUES ($j,$f,$o,$n,$d)
-                                    ON CONFLICT(jellyfin_id, field, old_value) DO UPDATE SET new_value=$n;";
+                                    ON CONFLICT(jellyfin_id, field, old_value) DO UPDATE SET new_value=$n, created_utc=$d;";
                 cmd.Parameters.AddWithValue("$j", jellyfinId);
-                cmd.Parameters.AddWithValue("$f", field.ToUpperInvariant());
-                cmd.Parameters.AddWithValue("$o", oldValue ?? string.Empty);
-                cmd.Parameters.AddWithValue("$n", newValue ?? string.Empty);
+                cmd.Parameters.AddWithValue("$f", f);
+                cmd.Parameters.AddWithValue("$o", oldV);
+                cmd.Parameters.AddWithValue("$n", newV);
                 cmd.Parameters.AddWithValue("$d", DateTime.UtcNow.ToString("o"));
                 cmd.ExecuteNonQuery();
+            }
+
+            // The retargeted override no longer produces its previous value — take it out of vals.
+            if (!string.IsNullOrEmpty(staleValue) && staleValue != newV)
+            {
+                var fid0 = FieldIdFor(c, f);
+                if (fid0 != 0)
+                {
+                    using var del = c.CreateCommand();
+                    del.CommandText = @"DELETE FROM vals WHERE field_id=$f AND value=$v
+                                        AND item_id=(SELECT id FROM items WHERE jellyfin_id=$j);";
+                    del.Parameters.AddWithValue("$f", fid0);
+                    del.Parameters.AddWithValue("$v", staleValue);
+                    del.Parameters.AddWithValue("$j", jellyfinId);
+                    del.ExecuteNonQuery();
+                }
             }
 
             ApplyInner(c, jellyfinId, field);
