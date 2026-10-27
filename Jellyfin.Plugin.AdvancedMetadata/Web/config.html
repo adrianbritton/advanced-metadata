@@ -1488,29 +1488,25 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.10.3 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.10.4 : per-row updating UX ===== -->
 <style>
-  tr.am-row-updating > td { background-color: rgba(255,152,0,.13) !important; }
+  tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
+  tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
+  tr.am-row-updating > td { background-color: rgba(255,152,0,.16) !important; }
   tr.am-row-updating > td:first-child { box-shadow: inset 3px 0 0 0 #ff9800; }
   tr.am-row-updating button, tr.am-row-updating a { opacity: .5; }
   tr.am-row-updating .am-pressed { opacity: 1 !important; font-weight: 600; animation: amPulse 1s ease-in-out infinite; }
   @keyframes amPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
-  tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
-  tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
   tr.am-row-done > td { animation: amRowDone 1100ms ease-out; }
-  @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.35); } 100% { background-color: transparent; } }
+  @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.4); } 100% { background-color: transparent; } }
   tr.am-row-fade { opacity: 0 !important; transition: opacity .6s ease; }
 </style>
 <script>
 (function () {
   "use strict";
   try {
-    var PENDING = [];
-    var EDITING = [];
-    var frame = false;
-    var watched = false;
+    var PENDING = [], EDITING = [], frame = false, watched = false;
     window.__amUx = { pending: PENDING, editing: EDITING };
-
     var SEL = "button, a, input[type=submit], input[type=button]";
 
     function labelOf(el) {
@@ -1523,8 +1519,8 @@ function applyDiagVisibility() {
       var t = labelOf(el);
       if (/^(revert|undo|restore)\b/i.test(t)) return "revert";
       if (/^(delete|remove)\b/i.test(t)) return "delete";
-      if (/^(save|apply|ok)\b/i.test(t)) return "save";
-      if (/^(cancel|close)\b/i.test(t)) return "cancel";
+      if (/^(save|apply|ok|done)\b/i.test(t)) return "save";
+      if (/^(cancel|close|discard)\b/i.test(t)) return "cancel";
       if (/^(edit|change|modify)\b/i.test(t)) return "edit";
       return null;
     }
@@ -1544,58 +1540,62 @@ function applyDiagVisibility() {
       if (!t && !a) return "";
       return (t + "\u0001" + a + "\u0001" + m).toLowerCase();
     }
-    function findRow(sig, skipClones) {
+    function findRow(sig) {
       var tb = liveTbody();
       if (!tb) return null;
       var r = tb.rows;
-      for (var i = 0; i < r.length; i++) {
-        if (skipClones && isClone(r[i])) continue;
-        if (sigOf(r[i]) === sig) return r[i];
-      }
+      for (var i = 0; i < r.length; i++) if (!isClone(r[i]) && sigOf(r[i]) === sig) return r[i];
       return null;
     }
-    function setEls(tr, fn) {
-      var e = tr.querySelectorAll(SEL);
-      for (var i = 0; i < e.length; i++) { try { fn(e[i]); } catch (x) {} }
-    }
+    function els(tr) { return tr ? tr.querySelectorAll(SEL) : []; }
     function disableRow(tr) {
-      setEls(tr, function (el) {
-        if (!el.hasAttribute("data-am-was")) el.setAttribute("data-am-was", el.hasAttribute("disabled") ? "1" : "0");
-        el.setAttribute("disabled", "disabled");
-      });
+      var e = els(tr);
+      for (var i = 0; i < e.length; i++) {
+        if (!e[i].hasAttribute("data-am-was")) e[i].setAttribute("data-am-was", e[i].hasAttribute("disabled") ? "1" : "0");
+        e[i].setAttribute("disabled", "disabled");
+      }
     }
     function enableRow(tr) {
-      setEls(tr, function (el) {
-        if (el.getAttribute("data-am-was") === "0") el.removeAttribute("disabled");
-        el.removeAttribute("data-am-was");
-      });
+      var e = els(tr);
+      for (var i = 0; i < e.length; i++) {
+        if (e[i].getAttribute("data-am-was") === "0") e[i].removeAttribute("disabled");
+        e[i].removeAttribute("data-am-was");
+      }
     }
-    function pressLabel(tr, act) {
-      setEls(tr, function (el) {
-        if (el.classList.contains("am-pressed")) return;
-        if (actOf(el) !== act) return;
-        el.setAttribute("data-am-label", labelOf(el));
-        el.classList.add("am-pressed");
-        var txt = (act === "save") ? "Saving…" : "Updating…";
-        if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
-      });
+    function markPressed(el, act) {
+      if (!el || !el.isConnected || el.classList.contains("am-pressed")) return false;
+      if (actOf(el) !== act) return false;
+      el.setAttribute("data-am-label", labelOf(el));
+      el.classList.add("am-pressed");
+      var txt = (act === "save") ? "Saving…" : "Updating…";
+      if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
+      return true;
+    }
+    function pressLabel(tr, act, preferred) {
+      if (markPressed(preferred, act)) return;
+      var e = els(tr);
+      for (var i = 0; i < e.length; i++) if (markPressed(e[i], act)) return;
+      if (act === "save" || act === "cancel") {
+        var all = document.querySelectorAll(SEL);
+        for (var j = 0; j < all.length; j++) if (markPressed(all[j], act)) return;
+      }
     }
     function restoreLabels(tr) {
-      setEls(tr, function (el) {
-        if (!el.classList.contains("am-pressed")) return;
-        var lbl = el.getAttribute("data-am-label");
-        if (lbl !== null) { if (el.tagName === "INPUT") el.value = lbl; else el.textContent = lbl; }
-        el.removeAttribute("data-am-label");
-        el.classList.remove("am-pressed");
-      });
+      var e = tr ? tr.querySelectorAll("[data-am-label]") : [];
+      for (var i = 0; i < e.length; i++) {
+        var lbl = e[i].getAttribute("data-am-label");
+        if (lbl !== null) { if (e[i].tagName === "INPUT") e[i].value = lbl; else e[i].textContent = lbl; }
+        e[i].removeAttribute("data-am-label");
+        e[i].classList.remove("am-pressed");
+      }
     }
-    function paintState(tr, e) {
+    function paint(tr, e) {
       if (!tr) return;
       if (e.phase === "active") {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
         disableRow(tr);
-        pressLabel(tr, e.act);
+        pressLabel(tr, e.act, e.pressEl);
       } else {
         tr.classList.remove("am-row-updating");
         tr.classList.add("am-row-done");
@@ -1608,7 +1608,8 @@ function applyDiagVisibility() {
       if (!tb || !e.template) return null;
       var c = e.template.cloneNode(true);
       c.setAttribute("data-am-clone", "1");
-      paintState(c, e);
+      c.classList.remove("am-row-editing");
+      paint(c, e);
       var idx = Math.min(e.index, tb.rows.length);
       if (idx >= tb.rows.length) tb.appendChild(c); else tb.insertBefore(c, tb.rows[idx]);
       return c;
@@ -1617,18 +1618,17 @@ function applyDiagVisibility() {
       try {
         var i, e, live;
         for (i = 0; i < EDITING.length; i++) {
-          live = findRow(EDITING[i].sig, true);
+          live = findRow(EDITING[i].sig);
           if (live) live.classList.add("am-row-editing");
         }
         for (i = 0; i < PENDING.length; i++) {
           e = PENDING[i];
           if (e.phase === "done") continue;
-          live = findRow(e.sig, true);
+          live = findRow(e.sig);
           if (live) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
-            e.clone = null;
-            e.row = live;
-            paintState(live, e);
+            e.clone = null; e.row = live;
+            paint(live, e);
           } else if (!e.clone) {
             e.clone = insertClone(e);
           }
@@ -1648,39 +1648,53 @@ function applyDiagVisibility() {
     function drop(e) { var i = PENDING.indexOf(e); if (i >= 0) PENDING.splice(i, 1); }
     function untick(sig) {
       for (var i = EDITING.length - 1; i >= 0; i--) if (EDITING[i].sig === sig) EDITING.splice(i, 1);
+      var r = findRow(sig);
+      if (r) r.classList.remove("am-row-editing");
     }
-
+    function resolveTarget(btn, act) {
+      if ((act === "save" || act === "cancel") && EDITING.length === 1) {
+        var r0 = findRow(EDITING[0].sig);
+        if (r0) return { tr: r0, sig: EDITING[0].sig, pressEl: btn };
+      }
+      var tr = btn.closest ? btn.closest("tr") : null;
+      if (!tr) return null;
+      if (isClone(tr)) tr = findRow(sigOf(tr)) || tr;
+      var sig = sigOf(tr);
+      if (!sig && EDITING.length === 1) { sig = EDITING[0].sig; tr = findRow(sig) || tr; }
+      if (!sig) return null;
+      return { tr: tr, sig: sig, pressEl: btn };
+    }
     function settle(e) {
       try {
         e.phase = "settling";
-        [e.row, e.clone].forEach(function (tr) { if (tr && tr.isConnected) paintState(tr, e); });
+        if (e.row && e.row.isConnected) paint(e.row, e);
+        if (e.clone && e.clone.isConnected) paint(e.clone, e);
         try { if (typeof window.loadData === "function") window.loadData(); } catch (x) {}
-
-        var tries = 0;
+        var t0 = Date.now(), stable = 0;
         (function check() {
-          var live = findRow(e.sig, true);
-          if (live) {
+          if (e.phase === "done") return;
+          var live = findRow(e.sig);
+          if (live) stable++; else stable = 0;
+          if (live && stable >= 6 && Date.now() - t0 > 1500) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
             e.clone = null;
             setTimeout(function () { if (live.isConnected) live.classList.remove("am-row-done"); }, 1100);
             e.phase = "done"; drop(e); return;
           }
-          tries++;
-          if (tries > 12) {
+          if (Date.now() - t0 > 5000) {
             e.phase = "done";
             if (!e.clone) e.clone = insertClone(e);
             var c = e.clone;
             if (c && c.isConnected) {
               c.classList.add("am-row-fade");
               setTimeout(function () { if (c.parentNode) c.parentNode.removeChild(c); drop(e); }, 700);
-            } else { drop(e); }
+            } else drop(e);
             return;
           }
-          setTimeout(check, 200);
+          setTimeout(check, 150);
         })();
       } catch (x) { e.phase = "done"; drop(e); }
     }
-
     function pageSaysBusy() {
       var n = document.querySelectorAll('[class*="essage"],[class*="tatus"],[id*="essage"],[id*="tatus"],.toast');
       for (var i = 0; i < n.length; i++) {
@@ -1711,16 +1725,13 @@ function applyDiagVisibility() {
         if (!btn) return;
         var act = actOf(btn);
         if (!act) return;
-        var tr = btn.closest("tr");
-        if (!tr || isClone(tr)) return;
         watch();
-
-        var sig = sigOf(tr);
-        if (!sig) return;
+        var t = resolveTarget(btn, act);
+        if (!t) return;
+        var sig = t.sig, tr = t.tr;
 
         if (act === "edit") {
-          untick(sig);
-          EDITING.push({ sig: sig });
+          untick(sig); EDITING.push({ sig: sig });
           requestAnimationFrame(function () { try { tr.classList.add("am-row-editing"); } catch (x) {} });
           return;
         }
@@ -1729,16 +1740,16 @@ function applyDiagVisibility() {
           requestAnimationFrame(function () { try { tr.classList.remove("am-row-editing"); } catch (x) {} });
           return;
         }
-        untick(sig);
 
+        untick(sig);
         var tb = liveTbody();
         var e = {
           act: act, phase: "active", row: tr, clone: null, sig: sig,
           index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
-          template: tr.cloneNode(true)
+          template: tr.cloneNode(true), pressEl: btn
         };
         PENDING.push(e);
-        requestAnimationFrame(function () { try { paintState(tr, e); } catch (x) {} });
+        requestAnimationFrame(function () { try { paint(tr, e); } catch (x) {} });
 
         var t0 = Date.now(), sawBusy = false, idle = 0;
         (function tick() {
@@ -1754,6 +1765,6 @@ function applyDiagVisibility() {
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.10.3 ===== -->
+<!-- ===== end 0.3.10.4 ===== -->
   
 </div>
