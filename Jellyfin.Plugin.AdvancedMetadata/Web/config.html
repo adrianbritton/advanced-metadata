@@ -313,7 +313,7 @@
         <span>Only edited values</span>
       </label>
       <span style="font-size:.85em; color:#8b949e">
-        <span style="color:#e2a03f">●</span> = edited, overrides the file
+      <span style="color:#e2a03f">●</span> edited &nbsp; <span style="color:#e5534b">●</span> deleted
       </span>
       <label class="am-checkrow" style="font-size:.9em">
         <input id="chkPaths" type="checkbox" />
@@ -1031,9 +1031,9 @@ function clearDataResults() {
       e.appendChild(document.createTextNode(r.Value));
       if (r.IsOverride) {
         var mark = document.createElement('span');
-        mark.textContent = ' ●';
-        mark.title = 'Edited — overrides the file';
-        mark.style.color = '#e2a03f';
+        mark.textContent = r.IsDeleted ? ' ●' : ' ●';
+        mark.title = r.IsDeleted ? 'Deleted — the value is hidden from the index' : 'Edited — overrides the file';
+        mark.style.color = r.IsDeleted ? '#e5534b' : '#e2a03f';
         e.appendChild(mark);
         e.appendChild(document.createTextNode(' '));
         var rv = document.createElement('button');
@@ -1173,20 +1173,32 @@ function loadData(append) {
     });
   }
 
-function runScanNow() {
+var uiWaiting = false;
+
+  function setScanning(on) {
+    var b = $('btnScan');
+    if (!b) { return; }
+    b.disabled = on;
+    b.textContent = on ? 'Updating…' : 'Start Scan';
+  }
+
+  function runScanNow() {
     if (!task) { loadData(false); return; }
+    uiWaiting = true;
+    setScanning(true);
     apiPost('ScheduledTasks/Running/' + task.Id)
       .then(function () {
         setTimeout(function () { refreshTask(); loadData(false); }, 6000);
         setTimeout(function () { refreshTask(); loadData(false); }, 30000);
       })
-      .catch(function () { loadData(false); });
+      .catch(function () { uiWaiting = false; setScanning(false); loadData(false); });
   }
   
 function revertValue(r) {
-    if (!window.confirm('Undo the edit on "' + r.Field + '" for:\n\n'
+    var what = r.IsDeleted ? 'Undo the deletion of "' : 'Undo the edit on "';
+    if (!window.confirm(what + r.Value + '" from "' + r.Field + '" for:\n\n'
         + (r.Artist ? r.Artist + ' — ' : '') + r.Item
-        + '\n\nThe original value is restored by re-reading the file. Continue?')) { return; }
+        + '\n\nThe original is restored by re-reading the file. Continue?')) { return; }
 
     apiPost('AdvancedMetadataData/ClearOverride'
       + '?jellyfinId=' + encodeURIComponent(r.Id)
@@ -1295,6 +1307,7 @@ function deleteValue(r) {
       }
     }
 
+    if (!running && uiWaiting) { uiWaiting = false; setScanning(false); loadData(false); }
     $('btnScan').disabled = running;
     $('btnCancel').disabled = !running;
     $('btnCreate').disabled = running;
@@ -1403,8 +1416,8 @@ function applyDiagVisibility() {
       }).catch(function (e) { setStatus('advancedStatus', 'err', 'REBUILD FAILED: ' + e.message); });
     });
   $('btnResetOverrides').addEventListener('click', function () {
-      if (!window.confirm('WARNING: This removes EVERY value you have edited or deleted across the whole index. '
-          + 'All values will be restored from your files on the next scan. Mappings are not affected. Continue?')) { return; }
+        if (!window.confirm('WARNING: This removes EVERY value you have edited or deleted across the whole index, '
+          + 'and then automatically runs a scan to restore everything from your files. Mappings are not affected. Continue?')) { return; }
      apiPost('AdvancedMetadataData/ClearAllOverrides').then(function (r) {
         var n = 0;
         try { var j = JSON.parse(r); n = j.Removed != null ? j.Removed : 0; } catch (e) { n = 0; }
