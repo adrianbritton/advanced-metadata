@@ -1488,25 +1488,28 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.10.2 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.10.3 : per-row updating UX ===== -->
 <style>
   tr.am-row-updating > td { background-color: rgba(255,152,0,.13) !important; }
   tr.am-row-updating > td:first-child { box-shadow: inset 3px 0 0 0 #ff9800; }
-  tr.am-row-updating a, tr.am-row-updating button, tr.am-row-updating input { opacity: .5; }
+  tr.am-row-updating button, tr.am-row-updating a { opacity: .5; }
   tr.am-row-updating .am-pressed { opacity: 1 !important; font-weight: 600; animation: amPulse 1s ease-in-out infinite; }
   @keyframes amPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
-  tr.am-row-done > td { animation: amRowDone 1000ms ease-out; }
+  tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
+  tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
+  tr.am-row-done > td { animation: amRowDone 1100ms ease-out; }
   @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.35); } 100% { background-color: transparent; } }
-  tr.am-row-fade { opacity: 0; transition: opacity .6s ease; }
+  tr.am-row-fade { opacity: 0 !important; transition: opacity .6s ease; }
 </style>
 <script>
 (function () {
   "use strict";
   try {
     var PENDING = [];
-    var watched = new WeakSet();
+    var EDITING = [];
     var frame = false;
-    window.__amUx = { pending: PENDING };
+    var watched = false;
+    window.__amUx = { pending: PENDING, editing: EDITING };
 
     var SEL = "button, a, input[type=submit], input[type=button]";
 
@@ -1521,20 +1524,30 @@ function applyDiagVisibility() {
       if (/^(revert|undo|restore)\b/i.test(t)) return "revert";
       if (/^(delete|remove)\b/i.test(t)) return "delete";
       if (/^(save|apply|ok)\b/i.test(t)) return "save";
+      if (/^(cancel|close)\b/i.test(t)) return "cancel";
+      if (/^(edit|change|modify)\b/i.test(t)) return "edit";
       return null;
     }
     function isClone(tr) { return !!(tr && tr.hasAttribute && tr.hasAttribute("data-am-clone")); }
-    function sigOf(tr) {
-      if (!tr) return "";
-      var c = Array.prototype.slice.call(tr.cells || []);
-      if (!c.length) return "";
-      return c.slice(0, Math.max(1, c.length - 2)).map(function (x) {
-        return (x.textContent || "").trim();
-      }).join("\u0001").toLowerCase();
+    function liveTbody() {
+      var t = document.getElementById("dataRows");
+      if (t) return t;
+      var l = document.querySelectorAll("table#dataTable tbody");
+      return l.length ? l[l.length - 1] : null;
     }
-    function findRow(tbody, sig, skipClones) {
-      if (!tbody || !tbody.isConnected) return null;
-      var r = tbody.rows;
+    function sigOf(tr) {
+      if (!tr || !tr.cells || tr.cells.length < 3) return "";
+      var c = tr.cells;
+      var t = ((c[1] && (c[1].getAttribute("title") || c[1].textContent)) || "").trim();
+      var a = ((c[0] && c[0].textContent) || "").trim();
+      var m = ((c[3] && c[3].textContent) || "").trim();
+      if (!t && !a) return "";
+      return (t + "\u0001" + a + "\u0001" + m).toLowerCase();
+    }
+    function findRow(sig, skipClones) {
+      var tb = liveTbody();
+      if (!tb) return null;
+      var r = tb.rows;
       for (var i = 0; i < r.length; i++) {
         if (skipClones && isClone(r[i])) continue;
         if (sigOf(r[i]) === sig) return r[i];
@@ -1549,14 +1562,12 @@ function applyDiagVisibility() {
       setEls(tr, function (el) {
         if (!el.hasAttribute("data-am-was")) el.setAttribute("data-am-was", el.hasAttribute("disabled") ? "1" : "0");
         el.setAttribute("disabled", "disabled");
-        el.style.pointerEvents = "none";
       });
     }
     function enableRow(tr) {
       setEls(tr, function (el) {
         if (el.getAttribute("data-am-was") === "0") el.removeAttribute("disabled");
         el.removeAttribute("data-am-was");
-        el.style.pointerEvents = "";
       });
     }
     function pressLabel(tr, act) {
@@ -1578,31 +1589,48 @@ function applyDiagVisibility() {
         el.classList.remove("am-pressed");
       });
     }
-    function paint(tr, act) {
+    function paintState(tr, e) {
       if (!tr) return;
-      tr.classList.add("am-row-updating");
-      disableRow(tr);
-      pressLabel(tr, act);
+      if (e.phase === "active") {
+        tr.classList.remove("am-row-done");
+        tr.classList.add("am-row-updating");
+        disableRow(tr);
+        pressLabel(tr, e.act);
+      } else {
+        tr.classList.remove("am-row-updating");
+        tr.classList.add("am-row-done");
+        restoreLabels(tr);
+        enableRow(tr);
+      }
+    }
+    function insertClone(e) {
+      var tb = liveTbody();
+      if (!tb || !e.template) return null;
+      var c = e.template.cloneNode(true);
+      c.setAttribute("data-am-clone", "1");
+      paintState(c, e);
+      var idx = Math.min(e.index, tb.rows.length);
+      if (idx >= tb.rows.length) tb.appendChild(c); else tb.insertBefore(c, tb.rows[idx]);
+      return c;
     }
     function reapply() {
       try {
-        for (var i = 0; i < PENDING.length; i++) {
-          var e = PENDING[i];
-          if (e.settled) continue;
-          var live = findRow(e.tbody, e.sig, true);
+        var i, e, live;
+        for (i = 0; i < EDITING.length; i++) {
+          live = findRow(EDITING[i].sig, true);
+          if (live) live.classList.add("am-row-editing");
+        }
+        for (i = 0; i < PENDING.length; i++) {
+          e = PENDING[i];
+          if (e.phase === "done") continue;
+          live = findRow(e.sig, true);
           if (live) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
             e.clone = null;
             e.row = live;
-            paint(live, e.act);
-          } else if (!e.clone && e.tbody && e.tbody.isConnected && e.template) {
-            var c = e.template.cloneNode(true);
-            c.setAttribute("data-am-clone", "1");
-            paint(c, e.act);
-            var idx = Math.min(e.index, e.tbody.rows.length);
-            if (idx >= e.tbody.rows.length) e.tbody.appendChild(c);
-            else e.tbody.insertBefore(c, e.tbody.rows[idx]);
-            e.clone = c;
+            paintState(live, e);
+          } else if (!e.clone) {
+            e.clone = insertClone(e);
           }
         }
       } catch (x) {}
@@ -1612,59 +1640,51 @@ function applyDiagVisibility() {
       frame = true;
       requestAnimationFrame(function () { frame = false; reapply(); });
     }
-    function watch(tbody) {
-      if (!tbody || watched.has(tbody)) return;
-      watched.add(tbody);
-      new MutationObserver(schedule).observe(tbody, { childList: true });
+    function watch() {
+      if (watched) return;
+      watched = true;
+      new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     }
-    function drop(e) {
-      var i = PENDING.indexOf(e);
-      if (i >= 0) PENDING.splice(i, 1);
+    function drop(e) { var i = PENDING.indexOf(e); if (i >= 0) PENDING.splice(i, 1); }
+    function untick(sig) {
+      for (var i = EDITING.length - 1; i >= 0; i--) if (EDITING[i].sig === sig) EDITING.splice(i, 1);
     }
-    function finishUp(e) {
-      try { if (typeof window.loadData === "function") window.loadData(); } catch (x) {}
-      setTimeout(function () { drop(e); }, 500);
-    }
+
     function settle(e) {
       try {
-        [e.row, e.clone].forEach(function (tr) {
-          if (tr && tr.isConnected) {
-            restoreLabels(tr);
-            enableRow(tr);
-            tr.classList.remove("am-row-updating");
-            tr.classList.add("am-row-done");
+        e.phase = "settling";
+        [e.row, e.clone].forEach(function (tr) { if (tr && tr.isConnected) paintState(tr, e); });
+        try { if (typeof window.loadData === "function") window.loadData(); } catch (x) {}
+
+        var tries = 0;
+        (function check() {
+          var live = findRow(e.sig, true);
+          if (live) {
+            if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
+            e.clone = null;
+            setTimeout(function () { if (live.isConnected) live.classList.remove("am-row-done"); }, 1100);
+            e.phase = "done"; drop(e); return;
           }
-        });
-        setTimeout(function () {
-          try {
-            if (!findRow(e.tbody, e.sig, true) && !e.clone && e.tbody && e.tbody.isConnected && e.template) {
-              var c = e.template.cloneNode(true);
-              c.setAttribute("data-am-clone", "1");
-              c.classList.add("am-row-done");
-              e.tbody.appendChild(c);
-              e.clone = c;
-            }
-            if (e.clone && e.clone.isConnected) {
-              e.clone.classList.add("am-row-fade");
-              setTimeout(function () {
-                if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
-                finishUp(e);
-              }, 650);
-            } else {
-              setTimeout(function () {
-                if (e.row && e.row.isConnected) e.row.classList.remove("am-row-done");
-                finishUp(e);
-              }, 1200);
-            }
-          } catch (x) { drop(e); }
-        }, 800);
-      } catch (x) { drop(e); }
+          tries++;
+          if (tries > 12) {
+            e.phase = "done";
+            if (!e.clone) e.clone = insertClone(e);
+            var c = e.clone;
+            if (c && c.isConnected) {
+              c.classList.add("am-row-fade");
+              setTimeout(function () { if (c.parentNode) c.parentNode.removeChild(c); drop(e); }, 700);
+            } else { drop(e); }
+            return;
+          }
+          setTimeout(check, 200);
+        })();
+      } catch (x) { e.phase = "done"; drop(e); }
     }
+
     function pageSaysBusy() {
       var n = document.querySelectorAll('[class*="essage"],[class*="tatus"],[id*="essage"],[id*="tatus"],.toast');
       for (var i = 0; i < n.length; i++) {
-        var t = (n[i].textContent || "").toLowerCase();
-        if (/scanning|updating|applying|reverting|rebuilding|saving/.test(t)) return true;
+        if (/scanning|updating|applying|reverting|rebuilding|saving/.test((n[i].textContent || "").toLowerCase())) return true;
       }
       return false;
     }
@@ -1693,31 +1713,40 @@ function applyDiagVisibility() {
         if (!act) return;
         var tr = btn.closest("tr");
         if (!tr || isClone(tr)) return;
-        var tbody = tr.parentNode;
-        if (!tbody || tbody.tagName !== "TBODY") return;
-        watch(tbody);
+        watch();
 
+        var sig = sigOf(tr);
+        if (!sig) return;
+
+        if (act === "edit") {
+          untick(sig);
+          EDITING.push({ sig: sig });
+          requestAnimationFrame(function () { try { tr.classList.add("am-row-editing"); } catch (x) {} });
+          return;
+        }
+        if (act === "cancel") {
+          untick(sig);
+          requestAnimationFrame(function () { try { tr.classList.remove("am-row-editing"); } catch (x) {} });
+          return;
+        }
+        untick(sig);
+
+        var tb = liveTbody();
         var e = {
-          act: act, tbody: tbody, row: tr, clone: null, sig: sigOf(tr),
-          index: Array.prototype.indexOf.call(tbody.rows, tr),
-          template: tr.cloneNode(true), settled: false
+          act: act, phase: "active", row: tr, clone: null, sig: sig,
+          index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
+          template: tr.cloneNode(true)
         };
         PENDING.push(e);
-        requestAnimationFrame(function () {
-          try { paint(tr, act); } catch (x) {}
-        });
+        requestAnimationFrame(function () { try { paintState(tr, e); } catch (x) {} });
 
         var t0 = Date.now(), sawBusy = false, idle = 0;
         (function tick() {
-          if (e.settled) return;
+          if (e.phase !== "active") return;
           var el = Date.now() - t0;
           var busy = pageSaysBusy() || window.__amScanBusy === true;
           if (busy) { sawBusy = true; idle = 0; } else if (sawBusy) { idle++; }
-          if ((sawBusy && idle >= 2 && el > 1500) || (!sawBusy && el > 7000) || el > 25000) {
-            e.settled = true;
-            settle(e);
-            return;
-          }
+          if ((sawBusy && idle >= 2 && el > 1500) || (!sawBusy && el > 7000) || el > 25000) { settle(e); return; }
           setTimeout(tick, 1200);
         })();
       } catch (x) {}
@@ -1725,6 +1754,6 @@ function applyDiagVisibility() {
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.10.2 ===== -->
+<!-- ===== end 0.3.10.3 ===== -->
   
 </div>
