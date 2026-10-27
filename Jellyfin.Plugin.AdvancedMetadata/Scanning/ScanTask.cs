@@ -207,6 +207,7 @@ public class ScanTask : IScheduledTask
                     try
                     {
                         itemId = _store.UpsertItem(key, "Audio", item.Name, artist, album, path, mtime, size);
+                        if (albumId.HasValue) { _store.SetItemParent(key, albumId.Value.ToString("N")); }
                     }
                     catch (Exception ex)
                     {
