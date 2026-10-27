@@ -1488,13 +1488,16 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.10.0 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.10.2 : per-row updating UX ===== -->
 <style>
-  tr.am-row-updating { opacity: .55; }
-  tr.am-row-updating button, tr.am-row-updating a { cursor: progress; }
-  tr.am-row-done { animation: amRowDone 900ms ease-out; }
+  tr.am-row-updating > td { background-color: rgba(255,152,0,.13) !important; }
+  tr.am-row-updating > td:first-child { box-shadow: inset 3px 0 0 0 #ff9800; }
+  tr.am-row-updating a, tr.am-row-updating button, tr.am-row-updating input { opacity: .5; }
+  tr.am-row-updating .am-pressed { opacity: 1 !important; font-weight: 600; animation: amPulse 1s ease-in-out infinite; }
+  @keyframes amPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+  tr.am-row-done > td { animation: amRowDone 1000ms ease-out; }
   @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.35); } 100% { background-color: transparent; } }
-  tr.am-row-fade { opacity: 0; transition: opacity .55s ease; }
+  tr.am-row-fade { opacity: 0; transition: opacity .6s ease; }
 </style>
 <script>
 (function () {
@@ -1502,15 +1505,25 @@ function applyDiagVisibility() {
   try {
     var PENDING = [];
     var watched = new WeakSet();
-    var AM = window.__amUx = { pending: PENDING };
+    var frame = false;
+    window.__amUx = { pending: PENDING };
 
-    function actOf(el) {
+    var SEL = "button, a, input[type=submit], input[type=button]";
+
+    function labelOf(el) {
       var t = (el.textContent || "").trim();
-      if (/^(revert|undo)$/i.test(t)) return "revert";
-      if (/^(delete|remove)$/i.test(t)) return "delete";
-      if (/^(save|apply)$/i.test(t)) return "save";
+      if (!t && el.value) t = String(el.value).trim();
+      if (!t && el.getAttribute) t = (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+      return t;
+    }
+    function actOf(el) {
+      var t = labelOf(el);
+      if (/^(revert|undo|restore)\b/i.test(t)) return "revert";
+      if (/^(delete|remove)\b/i.test(t)) return "delete";
+      if (/^(save|apply|ok)\b/i.test(t)) return "save";
       return null;
     }
+    function isClone(tr) { return !!(tr && tr.hasAttribute && tr.hasAttribute("data-am-clone")); }
     function sigOf(tr) {
       if (!tr) return "";
       var c = Array.prototype.slice.call(tr.cells || []);
@@ -1519,47 +1532,51 @@ function applyDiagVisibility() {
         return (x.textContent || "").trim();
       }).join("\u0001").toLowerCase();
     }
-    function findRow(tbody, sig) {
+    function findRow(tbody, sig, skipClones) {
       if (!tbody || !tbody.isConnected) return null;
       var r = tbody.rows;
-      for (var i = 0; i < r.length; i++) if (sigOf(r[i]) === sig) return r[i];
+      for (var i = 0; i < r.length; i++) {
+        if (skipClones && isClone(r[i])) continue;
+        if (sigOf(r[i]) === sig) return r[i];
+      }
       return null;
     }
+    function setEls(tr, fn) {
+      var e = tr.querySelectorAll(SEL);
+      for (var i = 0; i < e.length; i++) { try { fn(e[i]); } catch (x) {} }
+    }
     function disableRow(tr) {
-      var e = tr.querySelectorAll("button, a");
-      for (var i = 0; i < e.length; i++) {
-        e[i].setAttribute("data-am-was", e[i].hasAttribute("disabled") ? "1" : "0");
-        e[i].setAttribute("disabled", "disabled");
-        e[i].style.pointerEvents = "none";
-      }
+      setEls(tr, function (el) {
+        if (!el.hasAttribute("data-am-was")) el.setAttribute("data-am-was", el.hasAttribute("disabled") ? "1" : "0");
+        el.setAttribute("disabled", "disabled");
+        el.style.pointerEvents = "none";
+      });
     }
     function enableRow(tr) {
-      var e = tr.querySelectorAll("button, a");
-      for (var i = 0; i < e.length; i++) {
-        if (e[i].getAttribute("data-am-was") === "0") e[i].removeAttribute("disabled");
-        e[i].removeAttribute("data-am-was");
-        e[i].style.pointerEvents = "";
-      }
+      setEls(tr, function (el) {
+        if (el.getAttribute("data-am-was") === "0") el.removeAttribute("disabled");
+        el.removeAttribute("data-am-was");
+        el.style.pointerEvents = "";
+      });
     }
     function pressLabel(tr, act) {
-      var e = tr.querySelectorAll("button, a");
-      for (var i = 0; i < e.length; i++) {
-        var t = (e[i].textContent || "").trim();
-        var match = (act === "revert" && /^(revert|undo)$/i.test(t)) ||
-                    (act === "delete" && /^(delete|remove)$/i.test(t)) ||
-                    (act === "save" && /^(save|apply)$/i.test(t));
-        if (match) {
-          e[i].setAttribute("data-am-label", t);
-          e[i].textContent = act === "save" ? "Saving…" : "Updating…";
-        }
-      }
+      setEls(tr, function (el) {
+        if (el.classList.contains("am-pressed")) return;
+        if (actOf(el) !== act) return;
+        el.setAttribute("data-am-label", labelOf(el));
+        el.classList.add("am-pressed");
+        var txt = (act === "save") ? "Saving…" : "Updating…";
+        if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
+      });
     }
     function restoreLabels(tr) {
-      var e = tr.querySelectorAll("[data-am-label]");
-      for (var i = 0; i < e.length; i++) {
-        e[i].textContent = e[i].getAttribute("data-am-label");
-        e[i].removeAttribute("data-am-label");
-      }
+      setEls(tr, function (el) {
+        if (!el.classList.contains("am-pressed")) return;
+        var lbl = el.getAttribute("data-am-label");
+        if (lbl !== null) { if (el.tagName === "INPUT") el.value = lbl; else el.textContent = lbl; }
+        el.removeAttribute("data-am-label");
+        el.classList.remove("am-pressed");
+      });
     }
     function paint(tr, act) {
       if (!tr) return;
@@ -1572,7 +1589,7 @@ function applyDiagVisibility() {
         for (var i = 0; i < PENDING.length; i++) {
           var e = PENDING[i];
           if (e.settled) continue;
-          var live = findRow(e.tbody, e.sig);
+          var live = findRow(e.tbody, e.sig, true);
           if (live) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
             e.clone = null;
@@ -1580,6 +1597,7 @@ function applyDiagVisibility() {
             paint(live, e.act);
           } else if (!e.clone && e.tbody && e.tbody.isConnected && e.template) {
             var c = e.template.cloneNode(true);
+            c.setAttribute("data-am-clone", "1");
             paint(c, e.act);
             var idx = Math.min(e.index, e.tbody.rows.length);
             if (idx >= e.tbody.rows.length) e.tbody.appendChild(c);
@@ -1587,17 +1605,25 @@ function applyDiagVisibility() {
             e.clone = c;
           }
         }
-      } catch (err) {}
+      } catch (x) {}
+    }
+    function schedule() {
+      if (frame) return;
+      frame = true;
+      requestAnimationFrame(function () { frame = false; reapply(); });
     }
     function watch(tbody) {
       if (!tbody || watched.has(tbody)) return;
       watched.add(tbody);
-      new MutationObserver(function () { requestAnimationFrame(reapply); })
-        .observe(tbody, { childList: true });
+      new MutationObserver(schedule).observe(tbody, { childList: true });
     }
     function drop(e) {
       var i = PENDING.indexOf(e);
       if (i >= 0) PENDING.splice(i, 1);
+    }
+    function finishUp(e) {
+      try { if (typeof window.loadData === "function") window.loadData(); } catch (x) {}
+      setTimeout(function () { drop(e); }, 500);
     }
     function settle(e) {
       try {
@@ -1609,12 +1635,11 @@ function applyDiagVisibility() {
             tr.classList.add("am-row-done");
           }
         });
-        try { if (typeof window.loadData === "function") window.loadData(); } catch (x) {}
-
         setTimeout(function () {
           try {
-            if (!findRow(e.tbody, e.sig) && e.tbody && e.tbody.isConnected && !e.clone && e.template) {
+            if (!findRow(e.tbody, e.sig, true) && !e.clone && e.tbody && e.tbody.isConnected && e.template) {
               var c = e.template.cloneNode(true);
+              c.setAttribute("data-am-clone", "1");
               c.classList.add("am-row-done");
               e.tbody.appendChild(c);
               e.clone = c;
@@ -1623,23 +1648,23 @@ function applyDiagVisibility() {
               e.clone.classList.add("am-row-fade");
               setTimeout(function () {
                 if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
-                drop(e);
-              }, 600);
+                finishUp(e);
+              }, 650);
             } else {
               setTimeout(function () {
                 if (e.row && e.row.isConnected) e.row.classList.remove("am-row-done");
-                drop(e);
+                finishUp(e);
               }, 1200);
             }
           } catch (x) { drop(e); }
-        }, 900);
+        }, 800);
       } catch (x) { drop(e); }
     }
     function pageSaysBusy() {
-      var n = document.querySelectorAll('[id*="essage"],[class*="essage"],[id*="tatus"],[class*="tatus"],[class*="scan"]');
+      var n = document.querySelectorAll('[class*="essage"],[class*="tatus"],[id*="essage"],[id*="tatus"],.toast');
       for (var i = 0; i < n.length; i++) {
         var t = (n[i].textContent || "").toLowerCase();
-        if (/scanning|updating|applying|reverting|rebuilding/.test(t)) return true;
+        if (/scanning|updating|applying|reverting|rebuilding|saving/.test(t)) return true;
       }
       return false;
     }
@@ -1662,23 +1687,25 @@ function applyDiagVisibility() {
 
     document.addEventListener("click", function (ev) {
       try {
-        var btn = ev.target && ev.target.closest ? ev.target.closest("button, a") : null;
+        var btn = ev.target && ev.target.closest ? ev.target.closest(SEL) : null;
         if (!btn) return;
         var act = actOf(btn);
         if (!act) return;
         var tr = btn.closest("tr");
-        if (!tr) return;
+        if (!tr || isClone(tr)) return;
         var tbody = tr.parentNode;
         if (!tbody || tbody.tagName !== "TBODY") return;
         watch(tbody);
 
         var e = {
-          act: act, tbody: tbody, row: tr, clone: null,
-          sig: sigOf(tr), index: Array.prototype.indexOf.call(tbody.rows, tr),
+          act: act, tbody: tbody, row: tr, clone: null, sig: sigOf(tr),
+          index: Array.prototype.indexOf.call(tbody.rows, tr),
           template: tr.cloneNode(true), settled: false
         };
         PENDING.push(e);
-        requestAnimationFrame(function () { paint(tr, act); });
+        requestAnimationFrame(function () {
+          try { paint(tr, act); } catch (x) {}
+        });
 
         var t0 = Date.now(), sawBusy = false, idle = 0;
         (function tick() {
@@ -1686,16 +1713,18 @@ function applyDiagVisibility() {
           var el = Date.now() - t0;
           var busy = pageSaysBusy() || window.__amScanBusy === true;
           if (busy) { sawBusy = true; idle = 0; } else if (sawBusy) { idle++; }
-          if ((sawBusy && idle >= 2 && el > 2000) || el > 30000) {
-            e.settled = true; settle(e); return;
+          if ((sawBusy && idle >= 2 && el > 1500) || (!sawBusy && el > 7000) || el > 25000) {
+            e.settled = true;
+            settle(e);
+            return;
           }
-          setTimeout(tick, 1500);
+          setTimeout(tick, 1200);
         })();
       } catch (x) {}
     }, true);
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.10.0 ===== -->
+<!-- ===== end 0.3.10.2 ===== -->
   
 </div>
