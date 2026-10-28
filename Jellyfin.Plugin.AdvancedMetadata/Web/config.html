@@ -1497,6 +1497,7 @@ function applyDiagVisibility() {
   tr.am-row-updating button, tr.am-row-updating a { opacity: .5; }
   tr.am-row-updating .am-pressed { opacity: 1 !important; font-weight: 600; animation: amPulse 1s ease-in-out infinite; }
   @keyframes amPulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+  .am-hidden { display: none !important; }
   tr.am-row-done > td { animation: amRowDone 1400ms ease-out; }
   @keyframes amRowDone { 0% { background-color: rgba(76,175,80,.42); } 100% { background-color: transparent; } }
   tr.am-row-fade { opacity: 0 !important; transition: opacity .6s ease; }
@@ -1639,6 +1640,19 @@ function applyDiagVisibility() {
       return findRow(e.sig, e.sigF, e);
     }
     function els(tr) { return tr ? tr.querySelectorAll(SEL) : []; }
+    // while an update is running, show only the updating control
+    function hideOthers(tr) {
+      var e = els(tr), i, any = false;
+      for (i = 0; i < e.length; i++) { if (e[i].classList.contains("am-pressed")) { any = true; break; } }
+      if (!any) { return; }
+      for (i = 0; i < e.length; i++) {
+        e[i].classList.toggle("am-hidden", !e[i].classList.contains("am-pressed"));
+      }
+    }
+    function showAll(tr) {
+      var e = els(tr);
+      for (var i = 0; i < e.length; i++) { e[i].classList.remove("am-hidden"); }
+    }
 
     function disableRow(tr) {
       var e = els(tr);
@@ -1702,10 +1716,12 @@ function applyDiagVisibility() {
         tr.classList.add("am-row-updating");
         disableRow(tr);
         pressLabel(tr, e);
+        hideOthers(tr);
       } else {
         tr.classList.remove("am-row-updating");
         tr.classList.add("am-row-done");
         restoreLabels(tr);
+        showAll(tr);
         disableRow(tr);
       }
     }
@@ -1726,7 +1742,7 @@ function applyDiagVisibility() {
         for (i = EDITING.length - 1; i >= 0; i--) {
           e = EDITING[i];
           live = locate(e);
-          if (!live) { if (Date.now() - e.at > 60000) EDITING.splice(i, 1); continue; }
+          if (!live) { if (Date.now() - e.at > 20000) EDITING.splice(i, 1); continue; }
           e.row = live;
           live.classList.add("am-row-editing");
           v = valueOf(live);
@@ -1793,7 +1809,7 @@ function applyDiagVisibility() {
       pe.phase = "done";
       if (pe.row && pe.row.isConnected) {
         pe.row.classList.remove("am-row-updating");
-        restoreLabels(pe.row); enableRow(pe.row);
+        restoreLabels(pe.row); showAll(pe.row); enableRow(pe.row);
       }
       if (pe.clone && pe.clone.parentNode) pe.clone.parentNode.removeChild(pe.clone);
       pe.clone = null;
