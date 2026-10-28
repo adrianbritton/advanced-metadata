@@ -606,7 +606,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
                     count = Convert.ToInt64(cc.ExecuteScalar(), CultureInfo.InvariantCulture);
                 }
 
-                if (count == 1)
+                if (count > 0)
                 {
                     using var cmd3 = c.CreateCommand();
                     cmd3.CommandText = "DELETE FROM overrides WHERE jellyfin_id=$j AND field=$f;";
@@ -898,7 +898,7 @@ f.name AS field, o.old_value AS value,
         using (var cmd = c.CreateCommand())
         {
             cmd.CommandText = "SELECT * FROM (" + UnionSql + ") x WHERE " + where +
-                              " ORDER BY item, field, value LIMIT $lim OFFSET $off;";
+                              " ORDER BY artist, album, item, field, value LIMIT $lim OFFSET $off;";
             foreach (var (k, val) in args) { cmd.Parameters.AddWithValue(k, val); }
             cmd.Parameters.AddWithValue("$lim", limit);
             cmd.Parameters.AddWithValue("$off", offset);
