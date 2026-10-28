@@ -35,19 +35,24 @@ public class MetadataStore
 
     public string DatabasePath => _dbPath;
 
-    /// <summary>Appends one line to debug.log next to index.db. Capped at ~400 KB.</summary>
+    /// <summary>Appends one line to debug.log next to index.db, and beside the plugin DLLs.</summary>
     private void Log(string line)
     {
+        var stamp = DateTime.Now.ToString("HH:mm:ss.fff") + "  " + line + Environment.NewLine;
         try
         {
             var dir = Path.GetDirectoryName(_dbPath);
-            if (string.IsNullOrEmpty(dir)) { return; }
-            var p = Path.Combine(dir, "debug.log");
-            var fi = new FileInfo(p);
-            if (fi.Exists && fi.Length > 400_000) { File.WriteAllText(p, string.Empty); }
-            File.AppendAllText(p, DateTime.Now.ToString("HH:mm:ss.fff") + "  " + line + Environment.NewLine);
+            if (!string.IsNullOrEmpty(dir)) { AppendLog(Path.Combine(dir, "debug.log"), stamp); }
         }
         catch { }
+        try { AppendLog(Path.Combine(AppContext.BaseDirectory, "debug.log"), stamp); } catch { }
+    }
+
+    private static void AppendLog(string path, string text)
+    {
+        var fi = new FileInfo(path);
+        if (fi.Exists && fi.Length > 400_000) { File.WriteAllText(path, string.Empty); }
+        File.AppendAllText(path, text);
     }
 
     public long SizeBytes
