@@ -813,6 +813,8 @@ WHERE id > (SELECT MIN(id) FROM overrides o3
     }
 /* ---------------- read-only browse ---------------- */
 
+    public record BrowseResult(List<BrowseRow> Rows, int Total);
+
     public (int Items, int Values) Counts()
         => Read(c =>
         {
@@ -869,47 +871,54 @@ COALESCE(i.album,'') AS album, COALESCE(i.path,'') AS detail,
 f.name AS field, o.old_value AS value,
 1 AS isoverride, 1 AS isdeleted, o.old_value AS override_old";
 
-    private static List<BrowseRow> Run(SqliteConnection c, string where, string order,
-                                       List<(string K, object V)> args, int limit, int offset)
+    private const string UnionSql =
+        "SELECT " + RowCols + @"
+        FROM vals v
+        JOIN items i ON i.id = v.item_id
+        JOIN fields f ON f.id = v.field_id
+        UNION ALL
+        SELECT " + DeletedCols + @"
+        FROM overrides o
+        JOIN items i ON i.jellyfin_id = o.jellyfin_id
+        JOIN fields f ON f.name = o.field
+        WHERE o.new_value = ''";
+
+    private static BrowseResult Run(SqliteConnection c, string where,
+                                    List<(string K, object V)> args, int limit, int offset)
     {
-        var rows = new List<BrowseRow>();
-        var sql = $@"
-SELECT * FROM (
-    SELECT {RowCols}
-    FROM vals v
-    JOIN items i ON i.id = v.item_id
-    JOIN fields f ON f.id = v.field_id
-    UNION ALL
-    SELECT {DeletedCols}
-    FROM overrides o
-    JOIN items i ON i.jellyfin_id = o.jellyfin_id
-    JOIN fields f ON f.name = o.field
-    WHERE o.new_value = ''
-) x
-WHERE {where}
-ORDER BY {order}
-LIMIT $lim OFFSET $off;";
-
-        using var cmd = c.CreateCommand();
-        cmd.CommandText = sql;
-        foreach (var (k, val) in args) { cmd.Parameters.AddWithValue(k, val); }
-        cmd.Parameters.AddWithValue("$lim", limit);
-        cmd.Parameters.AddWithValue("$off", offset);
-
-        using var r = cmd.ExecuteReader();
-        while (r.Read())
+        long total;
+        using (var cc = c.CreateCommand())
         {
-            rows.Add(new BrowseRow(
-                r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
-                r.GetString(5), r.GetString(6), r.GetString(7),
-                r.GetInt64(8) != 0, r.GetInt64(9) != 0, r.GetString(10)));
+            cc.CommandText = "SELECT COUNT(*) FROM (" + UnionSql + ") x WHERE " + where + ";";
+            foreach (var (k, val) in args) { cc.Parameters.AddWithValue(k, val); }
+            total = Convert.ToInt64(cc.ExecuteScalar(), CultureInfo.InvariantCulture);
         }
 
-        return rows;
+        var rows = new List<BrowseRow>();
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.CommandText = "SELECT * FROM (" + UnionSql + ") x WHERE " + where +
+                              " ORDER BY item, field, value LIMIT $lim OFFSET $off;";
+            foreach (var (k, val) in args) { cmd.Parameters.AddWithValue(k, val); }
+            cmd.Parameters.AddWithValue("$lim", limit);
+            cmd.Parameters.AddWithValue("$off", offset);
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                rows.Add(new BrowseRow(
+                    r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
+                    r.GetString(5), r.GetString(6), r.GetString(7),
+                    r.GetInt64(8) != 0, r.GetInt64(9) != 0, r.GetString(10)));
+            }
+        }
+
+        return new BrowseResult(rows, (int)total);
     }
-    /// <summary>Browse one mapping's indexed values, optionally filtered by value text.</summary>
-    public List<BrowseRow> BrowseField(string field = "", string? query = null, int limit = 300,
-                                       int offset = 0, bool onlyOverrides = false)
+
+    /// <summary>Browse indexed values for a mapping, optionally filtered by value text and item type.</summary>
+    public BrowseResult BrowseField(string field = "", string? query = null, string? kind = null,
+                                    bool onlyOverrides = false, int limit = 300, int offset = 0)
         => Read(c =>
         {
             var where = new List<string>();
@@ -927,14 +936,21 @@ LIMIT $lim OFFSET $off;";
                 args.Add(("$like", "%" + query + "%"));
             }
 
+            if (!string.IsNullOrWhiteSpace(kind))
+            {
+                where.Add("LOWER(kind) = LOWER($k)");
+                args.Add(("$k", kind));
+            }
+
             if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
 
-            return Run(c, where.Count == 0 ? "1=1" : string.Join(" AND ", where),
-                       "item, field, value", args, Math.Max(1, limit), Math.Max(0, offset));
+            return Run(c, where.Count == 0 ? "1=1" : string.Join(" AND ", where), args,
+                       Math.Max(1, limit), Math.Max(0, offset));
         });
 
     /// <summary>All indexed values for items matching a title, artist, album or filename.</summary>
-    public List<BrowseRow> BrowseItem(string name = "", int limit = 300, int offset = 0, bool onlyOverrides = false)
+    public BrowseResult BrowseItem(string name = "", string? kind = null, bool onlyOverrides = false,
+                                   int limit = 300, int offset = 0)
         => Read(c =>
         {
             var where = new List<string>();
@@ -957,9 +973,14 @@ LIMIT $lim OFFSET $off;";
                 where.Add("(" + string.Join(" AND ", parts) + ")");
             }
 
+            if (!string.IsNullOrWhiteSpace(kind))
+            {
+                where.Add("LOWER(kind) = LOWER($k)");
+                args.Add(("$k", kind));
+            }
+
             if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
 
-            return Run(c, string.Join(" AND ", where), "item, field, value",
-                       args, Math.Max(1, limit), Math.Max(0, offset));
-        });  
+            return Run(c, string.Join(" AND ", where), args, Math.Max(1, limit), Math.Max(0, offset));
+        });
 }
