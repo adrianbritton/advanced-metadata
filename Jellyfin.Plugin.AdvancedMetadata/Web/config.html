@@ -1488,7 +1488,7 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.13.0 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.15.0 : per-row updating UX ===== -->
 <style>
   tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
   tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
@@ -1520,6 +1520,10 @@ function applyDiagVisibility() {
     function clsOf(el) { return (typeof el.className === "string") ? el.className : ""; }
 
     function actOf(el, allowClass) {
+      if (el.classList && el.classList.contains("am-pressed") && el.getAttribute) {
+        var stamped = el.getAttribute("data-am-act");
+        if (stamped) { return stamped; }
+      }
       var t = labelOf(el);
       if (/^(revert|undo|restore)\b/i.test(t)) return "revert";
       if (/^(delete|remove)\b/i.test(t)) return "delete";
@@ -1565,6 +1569,14 @@ function applyDiagVisibility() {
       var l = document.querySelectorAll("table#dataTable tbody");
       return l.length ? l[l.length - 1] : null;
     }
+    function cellText(td) {
+      if (!td) return "";
+      var c = td.cloneNode(true);
+      var b = c.querySelectorAll("button,a,input,.am-badge");
+      for (var i = 0; i < b.length; i++) { try { b[i].remove(); } catch (x) {} }
+      return (c.textContent || "").trim();
+    }
+    function valueOf(tr) { return (tr && tr.cells && tr.cells[4]) ? cellText(tr.cells[4]) : ""; }
     function sigOf(tr) {
       if (!tr || !tr.cells || tr.cells.length < 3) return "";
       var c = tr.cells;
@@ -1574,19 +1586,32 @@ function applyDiagVisibility() {
       if (!t && !a) return "";
       return (t + "\u0001" + a + "\u0001" + m).toLowerCase();
     }
-    function cellText(td) {
-      if (!td) return "";
-      var c = td.cloneNode(true);
-      var b = c.querySelectorAll("button,a,input,.am-badge");
-      for (var i = 0; i < b.length; i++) { try { b[i].remove(); } catch (x) {} }
-      return (c.textContent || "").trim();
+    function sigFull(tr) {
+      var s = sigOf(tr);
+      return s ? (s + "\u0001" + valueOf(tr).toLowerCase()) : "";
     }
-    function valueOf(tr) { return (tr && tr.cells && tr.cells[4]) ? cellText(tr.cells[4]) : ""; }
-    function findRow(sig) {
+    function claimed(tr, self) {
+      for (var i = 0; i < PENDING.length; i++) {
+        var p = PENDING[i];
+        if (p === self) continue;
+        if (p.row === tr || p.clone === tr) return true;
+      }
+      return false;
+    }
+    function findRow(sigL, sigF, self) {
       var tb = liveTbody();
       if (!tb) return null;
-      var r = tb.rows;
-      for (var i = 0; i < r.length; i++) if (!isClone(r[i]) && sigOf(r[i]) === sig) return r[i];
+      var r = tb.rows, i;
+      if (sigF) {
+        for (i = 0; i < r.length; i++) {
+          if (isClone(r[i]) || claimed(r[i], self)) continue;
+          if (sigFull(r[i]) === sigF) return r[i];
+        }
+      }
+      for (i = 0; i < r.length; i++) {
+        if (isClone(r[i])) continue;
+        if (sigOf(r[i]) === sigL) return r[i];
+      }
       return null;
     }
     function els(tr) { return tr ? tr.querySelectorAll(SEL) : []; }
@@ -1606,10 +1631,11 @@ function applyDiagVisibility() {
         e[i].removeAttribute("data-am-was");
       }
     }
-    function tag(el, txt) {
+    function tag(el, txt, act) {
       if (!el || !el.isConnected) return false;
-      if (el.classList.contains("am-pressed")) return true;
-      el.setAttribute("data-am-label", labelOf(el));
+      if (el.classList.contains("am-pressed") && el.getAttribute("data-am-act") === act) { return true; }
+      if (!el.hasAttribute("data-am-label")) { el.setAttribute("data-am-label", labelOf(el)); }
+      el.setAttribute("data-am-act", act);
       el.classList.add("am-pressed");
       if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
       return true;
@@ -1617,17 +1643,18 @@ function applyDiagVisibility() {
     function pressLabel(tr, act, preferred) {
       var txt = (act === "save") ? "Saving…" : "Updating…";
       var e = els(tr), i;
+      for (i = 0; i < e.length; i++) {
+        if (e[i].classList.contains("am-pressed") && e[i].getAttribute("data-am-act") === act) { return true; }
+      }
       if (act === "save") {
-        for (i = 0; i < e.length; i++) if (actOf(e[i], false) === "edit") { if (tag(e[i], txt)) return true; }
-        if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
-          if (tag(preferred, txt)) return true;
-        }
+        for (i = 0; i < e.length; i++) if (actOf(e[i], false) === "edit") { if (tag(e[i], txt, act)) return true; }
+        if (preferred && preferred.isConnected && tr && tr.contains(preferred)) { if (tag(preferred, txt, act)) return true; }
         return false;
       }
       if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
-        if (tag(preferred, txt)) return true;
+        if (tag(preferred, txt, act)) return true;
       }
-      for (i = 0; i < e.length; i++) if (actOf(e[i], false) === act) { if (tag(e[i], txt)) return true; }
+      for (i = 0; i < e.length; i++) if (actOf(e[i], false) === act) { if (tag(e[i], txt, act)) return true; }
       return false;
     }
     function setBadge(tr, txt) {
@@ -1647,6 +1674,7 @@ function applyDiagVisibility() {
         var lbl = e[i].getAttribute("data-am-label");
         if (lbl !== null) { if (e[i].tagName === "INPUT") e[i].value = lbl; else e[i].textContent = lbl; }
         e[i].removeAttribute("data-am-label");
+        e[i].removeAttribute("data-am-act");
         e[i].classList.remove("am-pressed");
       }
     }
@@ -1656,7 +1684,7 @@ function applyDiagVisibility() {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
         disableRow(tr);
-        if (hasPressed(tr) || pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
+        if (pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
         else { setBadge(tr, e.act === "save" ? "Saving…" : "Updating…"); }
       } else {
         tr.classList.remove("am-row-updating");
@@ -1682,7 +1710,7 @@ function applyDiagVisibility() {
         var i, e, live, v;
         for (i = EDITING.length - 1; i >= 0; i--) {
           e = EDITING[i];
-          live = findRow(e.sig);
+          live = findRow(e.sig, "", e);
           if (!live) { if (Date.now() - e.at > 60000) EDITING.splice(i, 1); continue; }
           live.classList.add("am-row-editing");
           v = valueOf(live);
@@ -1691,7 +1719,7 @@ function applyDiagVisibility() {
         for (i = 0; i < PENDING.length; i++) {
           e = PENDING[i];
           if (e.phase === "done") continue;
-          live = findRow(e.sig);
+          live = findRow(e.sig, e.sigF, e);
           if (live) {
             if (e.clone && e.clone.parentNode) e.clone.parentNode.removeChild(e.clone);
             e.clone = null; e.row = live;
@@ -1716,7 +1744,7 @@ function applyDiagVisibility() {
     function drop(e) { var i = PENDING.indexOf(e); if (i >= 0) PENDING.splice(i, 1); }
     function untick(sig) {
       for (var i = EDITING.length - 1; i >= 0; i--) if (EDITING[i].sig === sig) EDITING.splice(i, 1);
-      var r = findRow(sig);
+      var r = findRow(sig, "", null);
       if (r) r.classList.remove("am-row-editing");
     }
     function runningPending() {
@@ -1726,17 +1754,17 @@ function applyDiagVisibility() {
     function resolveTarget(btn, act) {
       var tr = btn.closest ? btn.closest("tr") : null;
       if (tr) {
-        if (isClone(tr)) tr = findRow(sigOf(tr)) || tr;
+        if (isClone(tr)) tr = findRow(sigOf(tr), "", null) || tr;
         var s1 = sigOf(tr);
-        if (s1) { LAST = { sig: s1, at: Date.now() }; return { tr: tr, sig: s1, pressEl: btn }; }
+        if (s1) { LAST = { sig: s1, at: Date.now() }; return { tr: tr, sig: s1, sigF: sigFull(tr), pressEl: btn }; }
       }
       if (EDITING.length) {
-        var r0 = findRow(EDITING[EDITING.length - 1].sig);
-        if (r0) return { tr: r0, sig: EDITING[EDITING.length - 1].sig, pressEl: btn };
+        var r0 = findRow(EDITING[EDITING.length - 1].sig, "", null);
+        if (r0) return { tr: r0, sig: EDITING[EDITING.length - 1].sig, sigF: sigFull(r0), pressEl: btn };
       }
       if (LAST && Date.now() - LAST.at < 600000) {
-        var r1 = findRow(LAST.sig);
-        if (r1) return { tr: r1, sig: LAST.sig, pressEl: btn };
+        var r1 = findRow(LAST.sig, "", null);
+        if (r1) return { tr: r1, sig: LAST.sig, sigF: sigFull(r1), pressEl: btn };
       }
       return null;
     }
@@ -1758,7 +1786,7 @@ function applyDiagVisibility() {
         var t0 = Date.now(), stable = 0;
         (function check() {
           if (e.phase === "done") return;
-          var live = findRow(e.sig);
+          var live = findRow(e.sig, e.sigF, e);
           if (live) stable++; else stable = 0;
           var quiet = Date.now() - lastMut;
           if (live && stable >= 6 && Date.now() - t0 > 1500 && quiet > 1200) {
@@ -1768,7 +1796,7 @@ function applyDiagVisibility() {
             setTimeout(function () { if (live.isConnected) live.classList.remove("am-row-done"); }, 1400);
             e.phase = "done"; drop(e); return;
           }
-          if (Date.now() - t0 > 9000) {
+          if (Date.now() - t0 > 6000) {
             e.phase = "done";
             if (!e.clone) e.clone = insertClone(e);
             var c = e.clone;
@@ -1827,30 +1855,28 @@ function applyDiagVisibility() {
       }
       if (act === "save") {
         var run = runningPending();
-        if (run) { requestAnimationFrame(function () { try { paint(run.row, run); } catch (x) {} }); return; }
+        if (run) { setTimeout(function () { try { paint(run.row, run); } catch (x) {} }, 0); return; }
       }
 
       var t = resolveTarget(btn, act);
       if (!t) return;
-      var sig = t.sig, tr = t.tr;
+      var sig = t.sig, sigF = t.sigF, tr = t.tr;
 
       if (act === "edit") {
         untick(sig);
         EDITING.push({ sig: sig, value: valueOf(tr), at: Date.now() });
-        requestAnimationFrame(function () { try { tr.classList.add("am-row-editing"); } catch (x) {} });
+        setTimeout(function () { try { tr.classList.add("am-row-editing"); } catch (x) {} }, 0);
         return;
       }
 
       untick(sig);
       var tb = liveTbody();
       var e = {
-        act: act, phase: "active", row: tr, clone: null, sig: sig,
+        act: act, phase: "active", row: tr, clone: null, sig: sig, sigF: sigF,
         index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
         template: tr.cloneNode(true), pressEl: btn, started: Date.now()
       };
       PENDING.push(e);
-      // runs after every other click listener has finished, so the page's own
-      // handler sees the button exactly as it was when pressed
       setTimeout(function () { try { paint(tr, e); } catch (x) {} }, 0);
 
       var t0 = Date.now(), sawBusy = false, idle = 0;
@@ -1866,19 +1892,7 @@ function applyDiagVisibility() {
       })();
     }
 
-    function dispatch(ev) {
-      try {
-        var b = btnFrom(ev);
-        if (!b) return;
-        var inT = inResults(b);
-        if (!inT && !runningPending() && !EDITING.length) return;
-        var a = actOf(b, !inT);
-        if (!a) return;
-        handle(b, a);
-      } catch (x) {}
-    }
-
-var DOWN = null;
+    var DOWN = null;
     document.addEventListener("pointerdown", function (ev) {
       try { var b = btnFrom(ev); if (b) { DOWN = { el: b, at: Date.now() }; } } catch (x) {}
     }, true);
@@ -1898,6 +1912,6 @@ var DOWN = null;
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.13.0 ===== -->
+<!-- ===== end 0.3.15.0 ===== -->
   
 </div>
