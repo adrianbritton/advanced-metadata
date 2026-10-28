@@ -811,4 +811,155 @@ WHERE id > (SELECT MIN(id) FROM overrides o3
 
         Exec(c, "INSERT INTO meta(key,value) VALUES('ovrfix','2') ON CONFLICT(key) DO UPDATE SET value='2';");
     }
+/* ---------------- read-only browse ---------------- */
+
+    public (int Items, int Values) Counts()
+        => Read(c =>
+        {
+            using var i = c.CreateCommand();
+            i.CommandText = "SELECT COUNT(*) FROM items;";
+            using var v = c.CreateCommand();
+            v.CommandText = "SELECT COUNT(*) FROM vals;";
+            return (
+                Convert.ToInt32(i.ExecuteScalar(), CultureInfo.InvariantCulture),
+                Convert.ToInt32(v.ExecuteScalar(), CultureInfo.InvariantCulture));
+        });
+
+    /// <summary>Per-mapping counts, for the Manage Mappings tab.</summary>
+    public List<FieldRow> FieldSummary()
+        => Read(c =>
+        {
+            var rows = new List<FieldRow>();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = @"
+SELECT f.name, f.display, f.hierarchy,
+       (SELECT COUNT(DISTINCT item_id) FROM vals WHERE field_id = f.id),
+       (SELECT COUNT(*) FROM vals WHERE field_id = f.id)
+FROM fields f
+ORDER BY f.name;";
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                rows.Add(new FieldRow(
+                    r.GetString(0), r.GetString(1), r.GetString(2),
+                    Convert.ToInt32(r.GetInt64(3), CultureInfo.InvariantCulture),
+                    Convert.ToInt32(r.GetInt64(4), CultureInfo.InvariantCulture)));
+            }
+
+            return rows;
+        });
+
+    private const string RowCols = @"
+i.jellyfin_id AS id, i.kind AS kind,
+COALESCE(i.name,'') AS item, COALESCE(i.artist,'') AS artist,
+COALESCE(i.album,'') AS album, COALESCE(i.path,'') AS detail,
+f.name AS field, v.value AS value,
+CASE WHEN EXISTS (SELECT 1 FROM overrides o
+                  WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value)
+     THEN 1 ELSE 0 END AS isoverride,
+0 AS isdeleted,
+COALESCE((SELECT o.old_value FROM overrides o
+          WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value
+          LIMIT 1), '') AS override_old";
+
+    private const string DeletedCols = @"
+i.jellyfin_id AS id, i.kind AS kind,
+COALESCE(i.name,'') AS item, COALESCE(i.artist,'') AS artist,
+COALESCE(i.album,'') AS album, COALESCE(i.path,'') AS detail,
+f.name AS field, o.old_value AS value,
+1 AS isoverride, 1 AS isdeleted, o.old_value AS override_old";
+
+    private static List<BrowseRow> Run(SqliteConnection c, string where, string order,
+                                       List<(string K, object V)> args, int limit, int offset)
+    {
+        var rows = new List<BrowseRow>();
+        var sql = $@"
+SELECT * FROM (
+    SELECT {RowCols}
+    FROM vals v
+    JOIN items i ON i.id = v.item_id
+    JOIN fields f ON f.id = v.field_id
+    UNION ALL
+    SELECT {DeletedCols}
+    FROM overrides o
+    JOIN items i ON i.jellyfin_id = o.jellyfin_id
+    JOIN fields f ON f.name = o.field
+    WHERE o.new_value = ''
+) x
+WHERE {where}
+ORDER BY {order}
+LIMIT $lim OFFSET $off;";
+
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = sql;
+        foreach (var (k, val) in args) { cmd.Parameters.AddWithValue(k, val); }
+        cmd.Parameters.AddWithValue("$lim", limit);
+        cmd.Parameters.AddWithValue("$off", offset);
+
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            rows.Add(new BrowseRow(
+                r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
+                r.GetString(5), r.GetString(6), r.GetString(7),
+                r.GetInt64(8) != 0, r.GetInt64(9) != 0, r.GetString(10)));
+        }
+
+        return rows;
+    }
+    /// <summary>Browse one mapping's indexed values, optionally filtered by value text.</summary>
+    public List<BrowseRow> BrowseField(string field = "", string? query = null, int limit = 300,
+                                       int offset = 0, bool onlyOverrides = false)
+        => Read(c =>
+        {
+            var where = new List<string>();
+            var args = new List<(string K, object V)>();
+
+            if (!string.IsNullOrWhiteSpace(field))
+            {
+                where.Add("field = $f");
+                args.Add(("$f", field.ToUpperInvariant()));
+            }
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                where.Add("value LIKE $like");
+                args.Add(("$like", "%" + query + "%"));
+            }
+
+            if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
+
+            return Run(c, where.Count == 0 ? "1=1" : string.Join(" AND ", where),
+                       "item, field, value", args, Math.Max(1, limit), Math.Max(0, offset));
+        });
+
+    /// <summary>All indexed values for items matching a title, artist, album or filename.</summary>
+    public List<BrowseRow> BrowseItem(string name = "", int limit = 300, int offset = 0, bool onlyOverrides = false)
+        => Read(c =>
+        {
+            var where = new List<string>();
+            var args = new List<(string K, object V)>();
+
+            var terms = (name ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(6).ToArray();
+            if (terms.Length == 0)
+            {
+                where.Add("1=1");
+            }
+            else
+            {
+                var parts = new List<string>();
+                for (var i = 0; i < terms.Length; i++)
+                {
+                    parts.Add($"(item LIKE $t{i} OR artist LIKE $t{i} OR album LIKE $t{i} OR detail LIKE $t{i})");
+                    args.Add(("$t" + i, "%" + terms[i] + "%"));
+                }
+
+                where.Add("(" + string.Join(" AND ", parts) + ")");
+            }
+
+            if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
+
+            return Run(c, string.Join(" AND ", where), "item, field, value",
+                       args, Math.Max(1, limit), Math.Max(0, offset));
+        });  
 }
