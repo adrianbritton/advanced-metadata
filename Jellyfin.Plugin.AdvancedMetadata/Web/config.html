@@ -1608,12 +1608,13 @@ function applyDiagVisibility() {
       var txt = (act === "save") ? "Saving…" : "Updating…";
       var e = els(tr), i;
       if (act === "save") {
-        for (i = 0; i < e.length; i++) if (actOf(e[i]) === "edit") { if (tag(e[i], txt)) return; }
-        if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return; }
-        return;
+        for (i = 0; i < e.length; i++) if (actOf(e[i]) === "edit") { if (tag(e[i], txt)) return true; }
+        if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return true; }
+        return false;
       }
-      if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return; }
-      for (i = 0; i < e.length; i++) if (actOf(e[i]) === act) { if (tag(e[i], txt)) return; }
+      if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return true; }
+      for (i = 0; i < e.length; i++) if (actOf(e[i]) === act) { if (tag(e[i], txt)) return true; }
+      return false;
     }
     function setBadge(tr, txt) {
       if (!tr || !tr.cells || !tr.cells[4]) return;
@@ -1641,8 +1642,8 @@ function applyDiagVisibility() {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
         disableRow(tr);
-        pressLabel(tr, e.act, e.pressEl);
-        setBadge(tr, e.act === "save" ? "Saving…" : "Updating…");
+        if (pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
+        else { setBadge(tr, e.act === "save" ? "Saving…" : "Updating…"); }
       } else {
         tr.classList.remove("am-row-updating");
         tr.classList.add("am-row-done");
