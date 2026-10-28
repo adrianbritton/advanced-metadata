@@ -35,6 +35,21 @@ public class MetadataStore
 
     public string DatabasePath => _dbPath;
 
+    /// <summary>Appends one line to debug.log next to index.db. Capped at ~400 KB.</summary>
+    private void Log(string line)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(_dbPath);
+            if (string.IsNullOrEmpty(dir)) { return; }
+            var p = Path.Combine(dir, "debug.log");
+            var fi = new FileInfo(p);
+            if (fi.Exists && fi.Length > 400_000) { File.WriteAllText(p, string.Empty); }
+            File.AppendAllText(p, DateTime.Now.ToString("HH:mm:ss.fff") + "  " + line + Environment.NewLine);
+        }
+        catch { }
+    }
+
     public long SizeBytes
     {
         get
@@ -425,6 +440,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
                 while (r2.Read()) { present.Add(r2.GetString(0)); }
             }
 
+            Log($"SetOverride j={jellyfinId} f={f} old='{asked}' new='{newV}' vals={present.Count} ovr={ovr.Count}");
             long? targetId = null;
             var stale = string.Empty;
             var baseValue = asked;
@@ -484,6 +500,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
                 del.ExecuteNonQuery();
             }
 
+            Log($"  -> base='{baseValue}' target={(targetId?.ToString() ?? "none")}");
             ApplyInner(c, jellyfinId, f);
         });
 
@@ -634,6 +651,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
                 inv.ExecuteNonQuery();
             }
 
+            Log($"ClearOverride j={jellyfinId} f={f} old='{ov}' removed={n}");
             return n;
         });
 
