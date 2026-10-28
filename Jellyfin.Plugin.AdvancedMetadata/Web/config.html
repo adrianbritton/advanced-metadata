@@ -1663,21 +1663,25 @@ function applyDiagVisibility() {
       if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
       return true;
     }
-    function pressLabel(tr, act, preferred) {
+   function pressLabel(tr, e) {
+      var act = e.act, preferred = e.pressEl;
       var txt = (act === "save") ? "Saving…" : "Updating…";
-      var e = els(tr), i;
-      for (i = 0; i < e.length; i++) {
-        if (e[i].classList.contains("am-pressed") && e[i].getAttribute("data-am-act") === act) { return true; }
+      var list = els(tr), i;
+      for (i = 0; i < list.length; i++) {
+        if (list[i].classList.contains("am-pressed") && list[i].getAttribute("data-am-act") === act) { return true; }
       }
       if (act === "save") {
-        for (i = 0; i < e.length; i++) if (actOf(e[i], false) === "edit") { if (tag(e[i], txt, act)) return true; }
-        if (preferred && preferred.isConnected && tr && tr.contains(preferred)) { if (tag(preferred, txt, act)) return true; }
-        return false;
+        for (i = 0; i < list.length; i++) if (actOf(list[i], false) === "edit") { if (tag(list[i], txt, act)) return true; }
+      } else {
+        if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
+          if (tag(preferred, txt, act)) return true;
+        }
+        for (i = 0; i < list.length; i++) if (actOf(list[i], false) === act) { if (tag(list[i], txt, act)) return true; }
       }
-      if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
-        if (tag(preferred, txt, act)) return true;
+      // last resort: same position as the button that was pressed
+      if (typeof e.pressIdx === "number" && list[e.pressIdx]) {
+        if (tag(list[e.pressIdx], txt, act)) return true;
       }
-      for (i = 0; i < e.length; i++) if (actOf(e[i], false) === act) { if (tag(e[i], txt, act)) return true; }
       return false;
     }
     function clearBadge(tr) { var b = tr && tr.querySelector(".am-badge"); if (b && b.parentNode) b.parentNode.removeChild(b); }
@@ -1697,7 +1701,7 @@ function applyDiagVisibility() {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
         disableRow(tr);
-        pressLabel(tr, e.act, e.pressEl);
+        pressLabel(tr, e);
       } else {
         tr.classList.remove("am-row-updating");
         tr.classList.add("am-row-done");
@@ -1887,14 +1891,21 @@ function applyDiagVisibility() {
       }
 
       untick(sig);
-      var tb = liveTbody();
-      var e = {
-        act: act, phase: "active", row: tr, clone: null, sig: sig, sigF: sigF, gi: gi,
-        index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
-        template: tr.cloneNode(true), pressEl: btn, started: Date.now()
-      };
-      PENDING.push(e);
-      setTimeout(function () { try { paint(tr, e); } catch (x) {} }, 0);
+        for (var k = EDITING.length - 1; k >= 0; k--) if (EDITING[k].row === tr) { EDITING.splice(k, 1); }
+        var tb = liveTbody();
+        var list = els(tr);
+        var e = {
+          act: act, phase: "active", row: tr, clone: null, sig: sig, sigF: sigF, gi: gi,
+          index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
+          template: tr.cloneNode(true), pressEl: btn, started: Date.now(),
+          pressIdx: Array.prototype.indexOf.call(list, btn)
+        };
+        PENDING.push(e);
+        setTimeout(function () { try { paint(tr, e); } catch (x) {} }, 0);
+        // the page redraws mid-flight; re-stamp shortly after so the label cannot be lost
+        [250, 700, 1500].forEach(function (ms) {
+          setTimeout(function () { try { reapply(); } catch (x) {} }, ms);
+        });
 
       var t0 = Date.now(), sawBusy = false, idle = 0;
       (function tick() {
