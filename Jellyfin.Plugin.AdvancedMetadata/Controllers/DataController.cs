@@ -48,38 +48,38 @@ public class DataController : ControllerBase
 
     [HttpGet("Values")]
     public ActionResult Values([FromQuery] string? field, [FromQuery] string? q, [FromQuery] string? kind,
-                               [FromQuery] bool onlyOverrides = false,
-                               [FromQuery] int limit = 300, [FromQuery] int offset = 0)
+                               [FromQuery] bool? onlyOverrides, [FromQuery] int? limit, [FromQuery] int? offset)
     {
-        var result = _store.BrowseField(field ?? string.Empty, q, kind, onlyOverrides,
-            Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
-
-        var rows = new List<object>();
-        foreach (var v in result.Rows)
+        var lim = Math.Clamp(limit ?? 300, 1, 2000);
+        var off = Math.Max(0, offset ?? 0);
+        var result = _store.BrowseField(field ?? string.Empty, q, kind, onlyOverrides == true, lim, off);
+        return Ok(new
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride, v.IsDeleted, v.OverrideOld });
-        }
-
-        return Ok(new { Total = result.Total, Rows = rows });
+            Total = result.Total,
+            Rows = result.Rows.Select(v => new
+            {
+                v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value,
+                v.IsOverride, v.IsDeleted, v.OverrideOld
+            })
+        });
     }
 
     [HttpGet("Item")]
-    public ActionResult Item([FromQuery] string name, [FromQuery] string? kind,
-                             [FromQuery] bool onlyOverrides = false,
-                             [FromQuery] int limit = 300, [FromQuery] int offset = 0)
+    public ActionResult Item([FromQuery] string? name, [FromQuery] string? kind,
+                             [FromQuery] bool? onlyOverrides, [FromQuery] int? limit, [FromQuery] int? offset)
     {
-        if (string.IsNullOrWhiteSpace(name)) { return BadRequest("name required"); }
-
-        var result = _store.BrowseItem(name, kind, onlyOverrides,
-            Math.Clamp(limit, 1, 2000), Math.Max(0, offset));
-
-        var rows = new List<object>();
-        foreach (var v in result.Rows)
+        var lim = Math.Clamp(limit ?? 300, 1, 2000);
+        var off = Math.Max(0, offset ?? 0);
+        var result = _store.BrowseItem(name ?? string.Empty, kind, onlyOverrides == true, lim, off);
+        return Ok(new
         {
-            rows.Add(new { v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value, v.IsOverride, v.IsDeleted, v.OverrideOld });
-        }
-
-        return Ok(new { Total = result.Total, Rows = rows });
+            Total = result.Total,
+            Rows = result.Rows.Select(v => new
+            {
+                v.Id, v.Kind, v.Item, v.Artist, v.Album, v.Detail, v.Field, v.Value,
+                v.IsOverride, v.IsDeleted, v.OverrideOld
+            })
+        });
     }
 
     [HttpGet("Overrides")]
