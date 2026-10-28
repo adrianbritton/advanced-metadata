@@ -795,4 +795,20 @@ WHERE id > (SELECT MIN(id) FROM overrides o3
 
             using (var d = c.CreateCommand())
             {
-                d.CommandText = "DELETE FROM vals WHERE field
+                d.CommandText = "DELETE FROM vals WHERE field_id=$f AND item_id=(SELECT id FROM items WHERE jellyfin_id=$j);";
+                d.Parameters.AddWithValue("$f", fid);
+                d.Parameters.AddWithValue("$j", j);
+                d.ExecuteNonQuery();
+            }
+
+            ApplyInner(c, j, f);
+
+            using var inv = c.CreateCommand();
+            inv.CommandText = "UPDATE items SET mtime=-1 WHERE jellyfin_id=$j;";
+            inv.Parameters.AddWithValue("$j", j);
+            inv.ExecuteNonQuery();
+        }
+
+        Exec(c, "INSERT INTO meta(key,value) VALUES('ovrfix','2') ON CONFLICT(key) DO UPDATE SET value='2';");
+    }
+}
