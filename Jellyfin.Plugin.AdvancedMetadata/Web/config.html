@@ -1655,9 +1655,7 @@ function applyDiagVisibility() {
       if (e.phase === "active") {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
-        // IMPORTANT: disable only after the click event has been delivered,
-        // otherwise the app's own handler never runs.
-        if (Date.now() - e.started > 320) { disableRow(tr); }
+        disableRow(tr);
         if (hasPressed(tr) || pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
         else { setBadge(tr, e.act === "save" ? "Saving…" : "Updating…"); }
       } else {
@@ -1851,8 +1849,9 @@ function applyDiagVisibility() {
         template: tr.cloneNode(true), pressEl: btn, started: Date.now()
       };
       PENDING.push(e);
-      requestAnimationFrame(function () { try { paint(tr, e); } catch (x) {} });
-      setTimeout(function () { try { reapply(); } catch (x) {} }, 360);
+      // runs after every other click listener has finished, so the page's own
+      // handler sees the button exactly as it was when pressed
+      setTimeout(function () { try { paint(tr, e); } catch (x) {} }, 0);
 
       var t0 = Date.now(), sawBusy = false, idle = 0;
       (function tick() {
@@ -1879,8 +1878,23 @@ function applyDiagVisibility() {
       } catch (x) {}
     }
 
-    document.addEventListener("pointerdown", dispatch, true);
-    document.addEventListener("click", dispatch, true);
+var DOWN = null;
+    document.addEventListener("pointerdown", function (ev) {
+      try { var b = btnFrom(ev); if (b) { DOWN = { el: b, at: Date.now() }; } } catch (x) {}
+    }, true);
+
+    document.addEventListener("click", function (ev) {
+      try {
+        var b = btnFrom(ev);
+        if (!b && DOWN && Date.now() - DOWN.at < 700) { b = DOWN.el; }
+        if (!b) return;
+        var inT = inResults(b);
+        if (!inT && !runningPending() && !EDITING.length) return;
+        var a = actOf(b, !inT);
+        if (!a) return;
+        handle(b, a);
+      } catch (x) {}
+    }, true);
   } catch (x) {}
 })();
 </script>
