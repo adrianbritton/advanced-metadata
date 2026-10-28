@@ -1488,7 +1488,7 @@ function applyDiagVisibility() {
 })();
 </script>
 
-<!-- ===== Advanced Metadata 0.3.11.0 : per-row updating UX ===== -->
+<!-- ===== Advanced Metadata 0.3.13.0 : per-row updating UX ===== -->
 <style>
   tr.am-row-editing > td { background-color: rgba(33,150,243,.12) !important; }
   tr.am-row-editing > td:first-child { box-shadow: inset 3px 0 0 0 #2196f3; }
@@ -1518,13 +1518,16 @@ function applyDiagVisibility() {
       return t;
     }
     function clsOf(el) { return (typeof el.className === "string") ? el.className : ""; }
-    function actOf(el) {
-      var t = labelOf(el), c = clsOf(el);
+
+    function actOf(el, allowClass) {
+      var t = labelOf(el);
       if (/^(revert|undo|restore)\b/i.test(t)) return "revert";
       if (/^(delete|remove)\b/i.test(t)) return "delete";
       if (/^(save|apply|ok|done|confirm|yes)\b/i.test(t)) return "save";
       if (/^(cancel|close|discard|no)\b/i.test(t)) return "cancel";
       if (/^(edit|change|modify)\b/i.test(t)) return "edit";
+      if (!allowClass) return null;
+      var c = clsOf(el);
       if (/submit|primary|confirm/i.test(c)) return "save";
       if (/cancel|secondary|dismiss/i.test(c)) return "cancel";
       return null;
@@ -1550,6 +1553,10 @@ function applyDiagVisibility() {
       var p = ev.composedPath ? ev.composedPath() : null;
       var t = (p && p.length) ? p[0] : ev.target;
       return closestBtn(t);
+    }
+    function inResults(el) {
+      var tb = el && el.closest ? el.closest("tbody") : null;
+      return !!(tb && tb.id === "dataRows");
     }
     function isClone(tr) { return !!(tr && tr.hasAttribute && tr.hasAttribute("data-am-clone")); }
     function liveTbody() {
@@ -1583,6 +1590,8 @@ function applyDiagVisibility() {
       return null;
     }
     function els(tr) { return tr ? tr.querySelectorAll(SEL) : []; }
+    function hasPressed(tr) { return !!(tr && tr.querySelector && tr.querySelector(".am-pressed")); }
+
     function disableRow(tr) {
       var e = els(tr);
       for (var i = 0; i < e.length; i++) {
@@ -1598,7 +1607,8 @@ function applyDiagVisibility() {
       }
     }
     function tag(el, txt) {
-      if (!el || !el.isConnected || el.classList.contains("am-pressed")) return false;
+      if (!el || !el.isConnected) return false;
+      if (el.classList.contains("am-pressed")) return true;
       el.setAttribute("data-am-label", labelOf(el));
       el.classList.add("am-pressed");
       if (el.tagName === "INPUT") el.value = txt; else el.textContent = txt;
@@ -1608,12 +1618,16 @@ function applyDiagVisibility() {
       var txt = (act === "save") ? "Saving…" : "Updating…";
       var e = els(tr), i;
       if (act === "save") {
-        for (i = 0; i < e.length; i++) if (actOf(e[i]) === "edit") { if (tag(e[i], txt)) return true; }
-        if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return true; }
+        for (i = 0; i < e.length; i++) if (actOf(e[i], false) === "edit") { if (tag(e[i], txt)) return true; }
+        if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
+          if (tag(preferred, txt)) return true;
+        }
         return false;
       }
-      if (preferred && preferred.isConnected && actOf(preferred) === act) { if (tag(preferred, txt)) return true; }
-      for (i = 0; i < e.length; i++) if (actOf(e[i]) === act) { if (tag(e[i], txt)) return true; }
+      if (preferred && preferred.isConnected && tr && tr.contains(preferred) && actOf(preferred, false) === act) {
+        if (tag(preferred, txt)) return true;
+      }
+      for (i = 0; i < e.length; i++) if (actOf(e[i], false) === act) { if (tag(e[i], txt)) return true; }
       return false;
     }
     function setBadge(tr, txt) {
@@ -1641,14 +1655,17 @@ function applyDiagVisibility() {
       if (e.phase === "active") {
         tr.classList.remove("am-row-done");
         tr.classList.add("am-row-updating");
-        disableRow(tr);
-        if (pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
+        // IMPORTANT: disable only after the click event has been delivered,
+        // otherwise the app's own handler never runs.
+        if (Date.now() - e.started > 320) { disableRow(tr); }
+        if (hasPressed(tr) || pressLabel(tr, e.act, e.pressEl)) { clearBadge(tr); }
         else { setBadge(tr, e.act === "save" ? "Saving…" : "Updating…"); }
       } else {
         tr.classList.remove("am-row-updating");
         tr.classList.add("am-row-done");
         restoreLabels(tr);
         clearBadge(tr);
+        disableRow(tr);
       }
     }
     function insertClone(e) {
@@ -1671,10 +1688,7 @@ function applyDiagVisibility() {
           if (!live) { if (Date.now() - e.at > 60000) EDITING.splice(i, 1); continue; }
           live.classList.add("am-row-editing");
           v = valueOf(live);
-          if (e.value && v && v !== e.value) {
-            live.classList.remove("am-row-editing");
-            EDITING.splice(i, 1);
-          }
+          if (e.value && v && v !== e.value) { live.classList.remove("am-row-editing"); EDITING.splice(i, 1); }
         }
         for (i = 0; i < PENDING.length; i++) {
           e = PENDING[i];
@@ -1726,8 +1740,6 @@ function applyDiagVisibility() {
         var r1 = findRow(LAST.sig);
         if (r1) return { tr: r1, sig: LAST.sig, pressEl: btn };
       }
-      var r2 = document.querySelector("tr.am-row-editing") || document.querySelector("tr.am-row-updating");
-      if (r2 && sigOf(r2)) return { tr: r2, sig: sigOf(r2), pressEl: btn };
       return null;
     }
     function abort(pe) {
@@ -1812,8 +1824,7 @@ function applyDiagVisibility() {
       if (act === "cancel") {
         var ab = runningPending();
         if (ab) { abort(ab); return; }
-        var ct = resolveTarget(btn, "cancel");
-        if (ct) untick(ct.sig);
+        if (EDITING.length) { untick(EDITING[EDITING.length - 1].sig); return; }
         return;
       }
       if (act === "save") {
@@ -1837,10 +1848,11 @@ function applyDiagVisibility() {
       var e = {
         act: act, phase: "active", row: tr, clone: null, sig: sig,
         index: tb ? Array.prototype.indexOf.call(tb.rows, tr) : 0,
-        template: tr.cloneNode(true), pressEl: btn
+        template: tr.cloneNode(true), pressEl: btn, started: Date.now()
       };
       PENDING.push(e);
       requestAnimationFrame(function () { try { paint(tr, e); } catch (x) {} });
+      setTimeout(function () { try { reapply(); } catch (x) {} }, 360);
 
       var t0 = Date.now(), sawBusy = false, idle = 0;
       (function tick() {
@@ -1855,21 +1867,23 @@ function applyDiagVisibility() {
       })();
     }
 
-    document.addEventListener("pointerdown", function (ev) {
-      try { var b = btnFrom(ev); if (!b) return; var a = actOf(b); if (a) handle(b, a); } catch (x) {}
-    }, true);
-    document.addEventListener("click", function (ev) {
+    function dispatch(ev) {
       try {
         var b = btnFrom(ev);
-        var a = b ? actOf(b) : null;
-        if (!a && LAST) { b = LAST; a = LAST.act; }
+        if (!b) return;
+        var inT = inResults(b);
+        if (!inT && !runningPending() && !EDITING.length) return;
+        var a = actOf(b, !inT);
         if (!a) return;
         handle(b, a);
       } catch (x) {}
-    }, true);
+    }
+
+    document.addEventListener("pointerdown", dispatch, true);
+    document.addEventListener("click", dispatch, true);
   } catch (x) {}
 })();
 </script>
-<!-- ===== end 0.3.11.0 ===== -->
+<!-- ===== end 0.3.13.0 ===== -->
   
 </div>
