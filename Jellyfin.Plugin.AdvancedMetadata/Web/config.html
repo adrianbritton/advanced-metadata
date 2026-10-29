@@ -147,7 +147,7 @@
         Tag name
       </div>
       <input id="newTag" type="text" placeholder="e.g. LABEL" autocomplete="off" />
-      <div class="am-hint">Stored in upper case.</div>
+      <div class="am-hint">Must match the tag as exactly written in your files. Stored in upper case.</div>
     </div>
 
     <div class="am-field">
@@ -166,25 +166,34 @@
       <select id="newHierarchy">
         <option value="">— Please select —</option>
         <option value="songs">Songs only</option>
-        <option value="songs_albums">Songs + Parent Albums</option>
-        <option value="albums">Parent Albums only</option>
+        <option value="songs_albums">Songs + Albums</option>
+        <option value="albums">Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
-      <div class="am-hint">Pick the level this mapping should populate. "Songs + Parent Albums" is the usual choice.</div>
+      <div class="am-hint">Pick the level this mapping should populate. "Songs + Albums" is the usual choice.</div>
+    </div>
+
+    <div class="am-card">
+      <strong>Tag Delimiters</strong>
+      <div class="am-hint" style="margin-top:6px">
+        The default list is <span class="am-mono">/ | ; :</span>. Any of those characters inside a value splits it
+        into separate entries, so a catalogue number like <span class="am-mono">ABC/123</span> becomes two.
+        Exclude <span class="am-mono">/</span> for that mapping to keep it whole.
+      </div>
     </div>
 
     <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="Applies to this tag only. Leave both controls alone to inherit the default list.">?</span>
+        <span class="am-help" title="Applies to this tag only. Leave the box empty to inherit the default list.">?</span>
         Delimiters for this tag (optional)
       </div>
-      <select id="newDelimMode">
+      <input id="newDelims" type="text" placeholder="Enter Delimiter e.g. /" autocomplete="off" />
+      <div class="am-hint">Leave the box empty to inherit the default list. Otherwise the dropdown below decides whether the characters you type are taken off the default list, added to it, or used on their own.</div>
+      <select id="newDelimMode" style="margin-top:8px;">
         <option value="remove">Remove from default list</option>
         <option value="add">Add to default list</option>
         <option value="only">Use only these</option>
       </select>
-      <input id="newDelims" type="text" placeholder="characters, e.g. /" autocomplete="off" style="margin-top:8px;" />
-      <div class="am-hint">Leave the box empty to inherit the default list. Otherwise the dropdown decides whether the characters you type are taken off the default list, added to it, or used on their own.</div>
     </div>
 
     <div class="am-actions">
@@ -211,8 +220,8 @@
       <select id="bulkHierarchy">
         <option value="">— Please select —</option>
         <option value="songs">Songs only</option>
-        <option value="songs_albums">Songs + Parent Albums</option>
-        <option value="albums">Parent Albums only</option>
+        <option value="songs_albums">Songs + Albums</option>
+        <option value="albums">Albums only</option>
         <option value="songs_albums_artists">Songs + Albums + Artists</option>
       </select>
       <div class="am-hint">Applies to every tag in the list above.</div>
@@ -238,16 +247,6 @@
   <!-- ============ MANAGE ============ -->
   <div class="am-panel" data-panel="manage">
   <h2>Manage Mappings</h2>
-    <div class="am-card">
-      <strong>Delimiters</strong>
-      <div class="am-hint" style="margin-top:6px">
-        A dash means the default list of <span class="am-mono">/ | ; :</span> applies.
-        <span class="am-mono">− /</span> takes a character off the default list,
-        <span class="am-mono">+ &gt;&gt;</span> adds one, and
-        <span class="am-mono">only ~</span> uses characters on their own.
-        The default list can be changed on the <strong>Advanced</strong> tab.
-      </div>
-    </div>
     <div class="am-tablewrap">
     <table class="am-table am-table-auto">
       <thead>
@@ -266,6 +265,16 @@
     <div id="manageEmpty" class="am-hint"></div>
 
     <div class="am-actions" style="margin-top:26px">
+      <div class="am-card">
+      <strong>Delimiters</strong>
+      <div class="am-hint" style="margin-top:6px">
+        <span class="am-mono">default</span> means the default list of
+        <span class="am-mono">/ | ; :</span> applies. <span class="am-mono">− /</span> takes a character off
+        the default list, <span class="am-mono">+ &gt;&gt;</span> adds one, and
+        <span class="am-mono">only ~</span> uses characters on their own.
+        The default list can be changed on the <strong>Advanced</strong> tab.
+      </div>
+    </div>
       <button id="btnDeleteAll" class="am-btn am-btn-danger">Delete All Mappings</button>
     </div>
     <div class="am-hint" style="max-width:620px">
@@ -517,8 +526,8 @@
 
   var HIER = {
     songs: 'Songs only',
-    songs_albums: 'Songs + Parent Albums',
-    albums: 'Parent Albums only',
+    songs_albums: 'Songs + Albums',
+    albums: 'Albums only',
     songs_albums_artists: 'Songs + Albums + Artists'
   };
 
@@ -893,21 +902,21 @@ function renderManage() {
         tr.appendChild(tdHier);
 
         var tdDel = document.createElement('td');
-        var delMode = document.createElement('select');
-        delMode.id = 'editDelimMode';
-        delMode.innerHTML = '<option value="remove">Remove</option>' +
-                            '<option value="add">Add</option>' +
-                            '<option value="only">Only</option>';
-        delMode.value = m.DelimiterMode || 'remove';
         var delInput = document.createElement('input');
         delInput.type = 'text';
         delInput.id = 'editDelims';
-        delInput.placeholder = 'default';
+        delInput.placeholder = 'Enter Delimiter e.g. /';
         delInput.value = m.Delimiters || '';
-        delInput.style.marginLeft = '6px';
-        delInput.style.width = '70px';
-        tdDel.appendChild(delMode);
         tdDel.appendChild(delInput);
+        var delMode = document.createElement('select');
+        delMode.id = 'editDelimMode';
+        delMode.innerHTML = '<option value="">default</option>' +
+                            '<option value="remove">Remove</option>' +
+                            '<option value="add">Add</option>' +
+                            '<option value="only">Only</option>';
+        delMode.value = m.Delimiters ? (m.DelimiterMode || 'remove') : '';
+        delMode.style.marginTop = '6px';
+        tdDel.appendChild(delMode);
         tr.appendChild(tdDel);
 
         var tdC1 = document.createElement('td');
@@ -924,7 +933,7 @@ function renderManage() {
           var originalHierarchy = m.Hierarchy;
           m.Hierarchy = $('editHier').value;
           m.Delimiters = $('editDelims').value;
-          m.DelimiterMode = $('editDelimMode').value;
+          m.DelimiterMode = $('editDelims').value ? $('editDelimMode').value : '';
           if (cfg.KnownMappingIds && cfg.KnownMappingIds.indexOf(m.Id) > -1 && m.Hierarchy !== originalHierarchy) {
             cfg.KnownMappingIds = cfg.KnownMappingIds.filter(function (x) { return x !== m.Id; });
           }
@@ -958,7 +967,7 @@ function renderManage() {
 
         var tdDel2 = document.createElement('td');
         tdDel2.className = 'am-mono';
-        tdDel2.textContent = !m.Delimiters ? '—'
+        tdDel2.textContent = !m.Delimiters ? 'default'
           : (m.DelimiterMode === 'add' ? '+ ' : m.DelimiterMode === 'only' ? 'only ' : '\u2212 ') + m.Delimiters;
         tr.appendChild(tdDel2);
 
