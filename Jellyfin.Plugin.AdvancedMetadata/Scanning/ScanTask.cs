@@ -222,7 +222,14 @@ public class ScanTask : IScheduledTask
                     {
                         if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
 
-                        var mDelims = string.IsNullOrWhiteSpace(m.Delimiters) ? delims : m.Delimiters.ToCharArray();
+                        var extra = (m.Delimiters ?? string.Empty).Trim();
+                        var mode = (m.DelimiterMode ?? "remove").Trim().ToLowerInvariant();
+                        char[] mDelims;
+                        if (extra.Length == 0) { mDelims = delims; }
+                        else if (mode == "only") { mDelims = extra.ToCharArray(); }
+                        else if (mode == "remove") { mDelims = delims.Where(c => extra.IndexOf(c) < 0).ToArray(); }
+                        else { mDelims = delims.Concat(extra.ToCharArray()).Distinct().ToArray(); }
+                        if (mDelims.Length == 0) { mDelims = new[] { '/', '|', ';', ':' }; }
                         var vals = ReadTag(path, m.SourceTag, mDelims);
                         if (vals.Count == 0) { continue; }
 
