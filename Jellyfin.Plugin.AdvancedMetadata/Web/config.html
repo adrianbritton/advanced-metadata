@@ -170,6 +170,15 @@
       <div class="am-hint">Pick the level this mapping should populate. "Songs + Parent Albums" is the usual choice.</div>
     </div>
 
+<div class="am-field">
+      <div class="am-label">
+        <span class="am-help" title="Characters that separate multiple values for THIS tag only. Leave blank to use the default list on the Advanced tab.">?</span>
+        Delimiters for this tag (optional)
+      </div>
+      <input id="newDelims" type="text" placeholder="e.g. ~" autocomplete="off" />
+      <div class="am-hint">Use this when a value legitimately contains one of the default delimiters, such as a catalogue number containing a slash. Leave blank to inherit the default list. Use a character that never appears in your data to stop splitting entirely.</div>
+    </div>
+
     <div class="am-actions">
       <button id="btnCreate" class="am-btn am-btn-primary">Create Mapping</button>
     </div>
@@ -210,9 +219,10 @@
     <div class="am-card">
       <strong>Tag Delimiters</strong>
       <div class="am-hint" style="margin-top:6px">
-        Mappings will inherit the default list of character delimiters of
-        <span class="am-mono">/ | ; :</span> for tags holding multiple values.
-        Users with custom delimiters can change them on the <strong>Advanced</strong> tab.
+        Mappings inherit the default list of character delimiters of
+        <span class="am-mono">/ | ; :</span> unless you set your own in the
+        <strong>Delimiters for this tag</strong> box above. The default list can be changed on the
+        <strong>Advanced</strong> tab.
       </div>
     </div>
   </div>
@@ -223,10 +233,11 @@
     <table class="am-table">
       <thead>
         <tr>
-          <th style="width:22%">Tag</th>
-          <th style="width:26%">Display name</th>
-          <th style="width:20%">Applies to</th>
-          <th class="am-hide-sm" style="width:12%">Created</th>
+          <th style="width:18%">Tag</th>
+          <th style="width:22%">Display name</th>
+          <th style="width:16%">Applies to</th>
+          <th style="width:14%">Delimiters</th>
+          <th class="am-hide-sm" style="width:10%">Created</th>
           <th style="width:20%">Actions</th>
         </tr>
       </thead>
@@ -764,12 +775,12 @@
       cfg.Mappings = cfg.Mappings || [];
       cfg.Mappings.push({
         Id: guid(), SourceTag: tag.toUpperCase(), DisplayName: display || tag.toUpperCase(),
-        Hierarchy: hier, CreatedUtc: new Date().toISOString()
+        Hierarchy: hier, CreatedUtc: new Date().toISOString(), Delimiters: $('newDelims').value
       });
 
       saveConfig(cfg).then(function () {
         setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
-        $('newTag').value = ''; $('newDisplay').value = '';
+        $('newTag').value = ''; $('newDisplay').value = ''; $('newDelims').value = '';
         renderManage(); refreshDataFields();
       }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
@@ -859,6 +870,15 @@ function renderManage() {
         tdHier.appendChild(hierSel);
         tr.appendChild(tdHier);
 
+        var tdDel = document.createElement('td');
+        var delInput = document.createElement('input');
+        delInput.type = 'text';
+        delInput.id = 'editDelims';
+        delInput.placeholder = 'default';
+        delInput.value = m.Delimiters || '';
+        tdDel.appendChild(delInput);
+        tr.appendChild(tdDel);
+
         var tdC1 = document.createElement('td');
         tdC1.className = 'am-hide-sm';
         tdC1.textContent = m.CreatedUtc ? new Date(m.CreatedUtc).toLocaleDateString() : '—';
@@ -872,6 +892,7 @@ function renderManage() {
           m.DisplayName = $('editName').value.trim() || m.SourceTag;
           var originalHierarchy = m.Hierarchy;
           m.Hierarchy = $('editHier').value;
+          m.Delimiters = $('editDelims').value;
           if (cfg.KnownMappingIds && cfg.KnownMappingIds.indexOf(m.Id) > -1 && m.Hierarchy !== originalHierarchy) {
             cfg.KnownMappingIds = cfg.KnownMappingIds.filter(function (x) { return x !== m.Id; });
           }
@@ -902,6 +923,11 @@ function renderManage() {
         var tdHier2 = document.createElement('td');
         tdHier2.textContent = HIER[m.Hierarchy] || m.Hierarchy;
         tr.appendChild(tdHier2);
+
+        var tdDel2 = document.createElement('td');
+        tdDel2.className = 'am-mono';
+        tdDel2.textContent = m.Delimiters || '—';
+        tr.appendChild(tdDel2);
 
         var tdC2 = document.createElement('td');
         tdC2.className = 'am-hide-sm';
