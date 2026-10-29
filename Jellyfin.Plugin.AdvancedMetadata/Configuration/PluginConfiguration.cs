@@ -41,5 +41,6 @@ public class Mapping
     public string DisplayName { get; set; } = string.Empty;
     public string Hierarchy { get; set; } = "songs_albums";
     public string Delimiters { get; set; } = string.Empty;
+    public string DelimiterMode { get; set; } = "remove";
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 }
