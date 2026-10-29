@@ -8,7 +8,7 @@ public class PluginConfiguration : BasePluginConfiguration
 {
     public List<Mapping> Mappings { get; set; } = new();
 
-    public string Delimiters { get; set; } = string.Empty;
+    public string Delimiters { get; set; } = "/|;:";
 
     public List<string> Libraries { get; set; } = new();
 
@@ -40,5 +40,6 @@ public class Mapping
     public string SourceTag { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string Hierarchy { get; set; } = "songs_albums";
+    public string Delimiters { get; set; } = string.Empty;
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 }
