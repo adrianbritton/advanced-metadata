@@ -138,13 +138,20 @@
   <div class="am-panel active" data-panel="create">
     <h2>Create Single Mapping</h2>
 
-    <div class="am-field">
+  <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="This must match the ID3 tag EXACTLY as written in your files.">?</span>
-        Enter tag name for mapping
+        <span class="am-help" title="Applies to this tag only. Leave both controls alone to inherit the default list.">?</span>
+        Delimiters for this tag (optional)
       </div>
-      <input id="newTag" type="text" placeholder="e.g. LABEL" autocomplete="off" />
-      <div class="am-hint">Case-insensitive. Must match the tag exactly as written in your files.</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <select id="newDelimMode" style="width:auto;">
+          <option value="remove">Remove from default list</option>
+          <option value="add">Add to default list</option>
+          <option value="only">Use only these</option>
+        </select>
+        <input id="newDelims" type="text" placeholder="characters, e.g. /" autocomplete="off" />
+      </div>
+      <div class="am-hint">Leave the box empty to inherit the default list. Otherwise the dropdown decides whether the characters you type are taken off the default list, added to it, or used on their own.</div>
     </div>
 
     <div class="am-field">
@@ -176,7 +183,10 @@
         Delimiters for this tag (optional)
       </div>
       <input id="newDelims" type="text" placeholder="e.g. ~" autocomplete="off" />
-      <div class="am-hint">Use this when a value legitimately contains one of the default delimiters, such as a catalogue number containing a slash. Leave blank to inherit the default list. Use a character that never appears in your data to stop splitting entirely.</div>
+      <div class="am-hint">Enter a custom delimiter to be used for this mapping?</div>
+      <div class="am-hint" style="margin-top:10px;">Mappings created here inherit the default list of character delimiters of
+        <span class="am-mono">/ | ; :</span>. The default list can be changed on the <strong>Advanced</strong> tab, and
+        individual per-mapping delimiters set later on the <strong>Manage Mappings</strong> tab.</div>
     </div>
 
     <div class="am-actions">
@@ -219,10 +229,10 @@
     <div class="am-card">
       <strong>Tag Delimiters</strong>
       <div class="am-hint" style="margin-top:6px">
-        Mappings inherit the default list of character delimiters of
-        <span class="am-mono">/ | ; :</span> unless you set your own in the
-        <strong>Delimiters for this tag</strong> box above. The default list can be changed on the
-        <strong>Advanced</strong> tab.
+        Bulk mappings inherit the default list of character delimiters of
+        <span class="am-mono">/ | ; :</span> unless a mapping overrides it.
+        The default list can be changed on the <strong>Advanced</strong> tab, and per-mapping
+        delimiters set on the <strong>Manage Mappings</strong> tab.
       </div>
     </div>
   </div>
@@ -243,7 +253,12 @@
       </thead>
       <tbody id="manageRows"></tbody>
     </table>
-    <div id="manageEmpty" class="am-empty">No mappings yet. Create one on the Create Mapping tab.</div>
+    <div class="am-hint" style="margin-bottom:10px;">Delimiters show as
+        <span class="am-mono">− /</span> to take a character off the default list,
+        <span class="am-mono">+ &gt;&gt;</span> to add one, and
+        <span class="am-mono">only ~</span> to use characters on their own.
+        A dash means the default list of <span class="am-mono">/ | ; :</span> applies.</div>
+      <div id="manageEmpty" class="am-hint"></div>
 
     <div class="am-actions" style="margin-top:26px">
       <button id="btnDeleteAll" class="am-btn am-btn-danger">Delete All Mappings</button>
@@ -775,12 +790,14 @@
       cfg.Mappings = cfg.Mappings || [];
       cfg.Mappings.push({
         Id: guid(), SourceTag: tag.toUpperCase(), DisplayName: display || tag.toUpperCase(),
-        Hierarchy: hier, CreatedUtc: new Date().toISOString(), Delimiters: $('newDelims').value
+        Hierarchy: hier, CreatedUtc: new Date().toISOString(), Delimiters: $('newDelims').value,
+        DelimiterMode: $('newDelimMode').value
       });
 
       saveConfig(cfg).then(function () {
         setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
         $('newTag').value = ''; $('newDisplay').value = ''; $('newDelims').value = '';
+        $('newDelimMode').value = 'remove';
         renderManage(); refreshDataFields();
       }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
@@ -871,11 +888,20 @@ function renderManage() {
         tr.appendChild(tdHier);
 
         var tdDel = document.createElement('td');
+        var delMode = document.createElement('select');
+        delMode.id = 'editDelimMode';
+        delMode.innerHTML = '<option value="remove">Remove</option>' +
+                            '<option value="add">Add</option>' +
+                            '<option value="only">Only</option>';
+        delMode.value = m.DelimiterMode || 'remove';
         var delInput = document.createElement('input');
         delInput.type = 'text';
         delInput.id = 'editDelims';
         delInput.placeholder = 'default';
         delInput.value = m.Delimiters || '';
+        delInput.style.marginLeft = '6px';
+        delInput.style.width = '70px';
+        tdDel.appendChild(delMode);
         tdDel.appendChild(delInput);
         tr.appendChild(tdDel);
 
@@ -893,6 +919,7 @@ function renderManage() {
           var originalHierarchy = m.Hierarchy;
           m.Hierarchy = $('editHier').value;
           m.Delimiters = $('editDelims').value;
+          m.DelimiterMode = $('editDelimMode').value;
           if (cfg.KnownMappingIds && cfg.KnownMappingIds.indexOf(m.Id) > -1 && m.Hierarchy !== originalHierarchy) {
             cfg.KnownMappingIds = cfg.KnownMappingIds.filter(function (x) { return x !== m.Id; });
           }
@@ -926,7 +953,8 @@ function renderManage() {
 
         var tdDel2 = document.createElement('td');
         tdDel2.className = 'am-mono';
-        tdDel2.textContent = m.Delimiters || '—';
+        tdDel2.textContent = !m.Delimiters ? '—'
+          : (m.DelimiterMode === 'add' ? '+ ' : m.DelimiterMode === 'only' ? 'only ' : '\u2212 ') + m.Delimiters;
         tr.appendChild(tdDel2);
 
         var tdC2 = document.createElement('td');
