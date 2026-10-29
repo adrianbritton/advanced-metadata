@@ -71,6 +71,9 @@
   .am-table td { padding: 11px 10px; border-bottom: 1px solid #21262d; vertical-align: middle;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .am-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .9em; color: #c9d1d9; }
+  .am-table-auto { table-layout: auto; }
+  .am-tablewrap { overflow-x: auto; }
+  .am-table-auto td:last-child, .am-table-auto th:last-child { white-space: nowrap; }
   .am-link { background: none; border: 0; padding: 0; color: #58a6ff; cursor: pointer;
              font-size: .9em; font-family: inherit; }
   .am-link:hover { text-decoration: underline; }
@@ -136,22 +139,15 @@
 
   <!-- ============ CREATE ============ -->
   <div class="am-panel active" data-panel="create">
-    <h2>Create Single Mapping</h2>
+<h2>Create Single Mapping</h2>
 
-  <div class="am-field">
+    <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="Applies to this tag only. Leave both controls alone to inherit the default list.">?</span>
-        Delimiters for this tag (optional)
+        <span class="am-help" title="The tag name exactly as it appears in your files, for example LABEL or CATALOGNUMBER. Case does not matter.">?</span>
+        Tag name
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <select id="newDelimMode" style="width:auto;">
-          <option value="remove">Remove from default list</option>
-          <option value="add">Add to default list</option>
-          <option value="only">Use only these</option>
-        </select>
-        <input id="newDelims" type="text" placeholder="characters, e.g. /" autocomplete="off" />
-      </div>
-      <div class="am-hint">Leave the box empty to inherit the default list. Otherwise the dropdown decides whether the characters you type are taken off the default list, added to it, or used on their own.</div>
+      <input id="newTag" type="text" placeholder="e.g. LABEL" autocomplete="off" />
+      <div class="am-hint">Stored in upper case.</div>
     </div>
 
     <div class="am-field">
@@ -177,16 +173,18 @@
       <div class="am-hint">Pick the level this mapping should populate. "Songs + Parent Albums" is the usual choice.</div>
     </div>
 
-<div class="am-field">
+    <div class="am-field">
       <div class="am-label">
-        <span class="am-help" title="Characters that separate multiple values for THIS tag only. Leave blank to use the default list on the Advanced tab.">?</span>
+        <span class="am-help" title="Applies to this tag only. Leave both controls alone to inherit the default list.">?</span>
         Delimiters for this tag (optional)
       </div>
-      <input id="newDelims" type="text" placeholder="e.g. ~" autocomplete="off" />
-      <div class="am-hint">Enter a custom delimiter to be used for this mapping?</div>
-      <div class="am-hint" style="margin-top:10px;">Mappings created here inherit the default list of character delimiters of
-        <span class="am-mono">/ | ; :</span>. The default list can be changed on the <strong>Advanced</strong> tab, and
-        individual per-mapping delimiters set later on the <strong>Manage Mappings</strong> tab.</div>
+      <select id="newDelimMode">
+        <option value="remove">Remove from default list</option>
+        <option value="add">Add to default list</option>
+        <option value="only">Use only these</option>
+      </select>
+      <input id="newDelims" type="text" placeholder="characters, e.g. /" autocomplete="off" style="margin-top:8px;" />
+      <div class="am-hint">Leave the box empty to inherit the default list. Otherwise the dropdown decides whether the characters you type are taken off the default list, added to it, or used on their own.</div>
     </div>
 
     <div class="am-actions">
@@ -219,28 +217,39 @@
       </select>
       <div class="am-hint">Applies to every tag in the list above.</div>
     </div>
+    <div class="am-card">
+      <strong>Tag Delimiters</strong>
+      <div class="am-hint" style="margin-top:6px">
+        Mappings created here inherit the default list of character delimiters of
+        <span class="am-mono">/ | ; :</span>. The default list can be changed on the
+        <strong>Advanced</strong> tab, and individual per-mapping delimiters set later on the
+        <strong>Manage Mappings</strong> tab.
+      </div>
+    </div>
+
     <div class="am-actions">
       <button id="btnBulk" class="am-btn am-btn-primary">Create Bulk Mappings</button>
     </div>
     <div id="bulkStatus" class="am-status"></div>
 
     <div class="am-sep"></div>
-
-    <div class="am-card">
-      <strong>Tag Delimiters</strong>
-      <div class="am-hint" style="margin-top:6px">
-        Bulk mappings inherit the default list of character delimiters of
-        <span class="am-mono">/ | ; :</span> unless a mapping overrides it.
-        The default list can be changed on the <strong>Advanced</strong> tab, and per-mapping
-        delimiters set on the <strong>Manage Mappings</strong> tab.
-      </div>
-    </div>
   </div>
 
   <!-- ============ MANAGE ============ -->
   <div class="am-panel" data-panel="manage">
-    <h2>Manage Mappings</h2>
-    <table class="am-table">
+  <h2>Manage Mappings</h2>
+    <div class="am-card">
+      <strong>Delimiters</strong>
+      <div class="am-hint" style="margin-top:6px">
+        A dash means the default list of <span class="am-mono">/ | ; :</span> applies.
+        <span class="am-mono">− /</span> takes a character off the default list,
+        <span class="am-mono">+ &gt;&gt;</span> adds one, and
+        <span class="am-mono">only ~</span> uses characters on their own.
+        The default list can be changed on the <strong>Advanced</strong> tab.
+      </div>
+    </div>
+    <div class="am-tablewrap">
+    <table class="am-table am-table-auto">
       <thead>
         <tr>
           <th>Tag</th>
@@ -248,17 +257,13 @@
           <th>Applies to</th>
           <th>Delimiters</th>
           <th class="am-hide-sm">Created</th>
-          <th style="width:1%; white-space:nowrap;">Actions</th>
+          <th style="white-space:nowrap;">Actions</th>
         </tr>
       </thead>
       <tbody id="manageRows"></tbody>
     </table>
-    <div class="am-hint" style="margin-bottom:10px;">Delimiters show as
-        <span class="am-mono">− /</span> to take a character off the default list,
-        <span class="am-mono">+ &gt;&gt;</span> to add one, and
-        <span class="am-mono">only ~</span> to use characters on their own.
-        A dash means the default list of <span class="am-mono">/ | ; :</span> applies.</div>
-      <div id="manageEmpty" class="am-hint"></div>
+    </div>
+    <div id="manageEmpty" class="am-hint"></div>
 
     <div class="am-actions" style="margin-top:26px">
       <button id="btnDeleteAll" class="am-btn am-btn-danger">Delete All Mappings</button>
