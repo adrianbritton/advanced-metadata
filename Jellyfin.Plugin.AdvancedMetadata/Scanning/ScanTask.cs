@@ -96,7 +96,9 @@ public class ScanTask : IScheduledTask
 
         try
         {
-            var delims = cfg.Delimiters.ToCharArray();
+            var delims = string.IsNullOrWhiteSpace(cfg.Delimiters)
+                ? new[] { '/', '|', ';', ':' }
+                : cfg.Delimiters.ToCharArray();
 
             Stage("Pruning and syncing mappings");
             _store.SyncMappings(mappings);
@@ -220,7 +222,8 @@ public class ScanTask : IScheduledTask
                     {
                         if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
 
-                        var vals = ReadTag(path, m.SourceTag, delims);
+                        var mDelims = string.IsNullOrWhiteSpace(m.Delimiters) ? delims : m.Delimiters.ToCharArray();
+                        var vals = ReadTag(path, m.SourceTag, mDelims);
                         if (vals.Count == 0) { continue; }
 
                         _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
