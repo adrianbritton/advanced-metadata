@@ -401,12 +401,12 @@
       tick <strong>Full Rescan</strong> below — otherwise the new mapping will have nothing to show.
     </div>
     
-    <div class="am-field" style="max-width:620px;margin-top:18px">
+    <div class="am-field" style="max-width:620px;margin-top:26px">
       <div class="am-label">Library to scan</div>
       <select id="scanLibrary">
         <option value="">— All Libraries —</option>
       </select>
-      <div class="am-hint">Only libraries containing audio tracks are listed. The choice is
+      <div class="am-hint">Only libraries containing content are listed. The choice is
       remembered, including for the scheduled scan — pick <b>— All Libraries —</b> to cover
       everything again. Full Rescan re-reads only the chosen library and leaves the rest intact.</div>
     </div>
@@ -1380,7 +1380,18 @@ function deleteValue(r) {
     $('chkGrouped').addEventListener('change', redrawData);
     $('chkPaths').addEventListener('change', redrawData);
     $('chkOverrides').addEventListener('change', function () { dataOffset = 0; loadData(false); });
-    $('dataFilter').addEventListener('input', redrawData);
+    var filterTimer = null;
+    $('dataFilter').addEventListener('input', function () {
+      redrawData();
+      clearTimeout(filterTimer);
+      filterTimer = setTimeout(function () {
+        var term = $('dataFilter').value.trim();
+        if (dataMode === 'field') { $('dataValue').value = term; }
+        else { $('dataItem').value = term; }
+        dataOffset = 0;
+        loadData(false);
+      }, 350);
+    });
 
     Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
       th.addEventListener('click', function () {
@@ -1474,9 +1485,11 @@ var LIB_TYPES = {
     boxsets: 'Collections'
   };
 
-  function countAudio(folderId) {
-    return apiGet('Items?parentId=' + folderId + '&includeItemTypes=Audio&recursive=true'
-      + '&limit=1&enableTotalRecordCount=true')
+  var MEDIA_KINDS = 'Audio,Video,MusicVideo,Movie,Episode';
+
+  function countItems(folderId) {
+    return apiGet('Items?parentId=' + folderId + '&includeItemTypes=' + MEDIA_KINDS
+      + '&recursive=true&limit=1&enableTotalRecordCount=true')
       .then(function (r) { return (r && r.TotalRecordCount) || 0; })
       .catch(function () { return 0; });
   }
@@ -1489,7 +1502,7 @@ var LIB_TYPES = {
       var folders = (list || []).filter(function (f) { return f.ItemId || f.Id; });
       return Promise.all(folders.map(function (f) {
         var id = f.ItemId || f.Id;
-        return countAudio(id).then(function (n) {
+        return countItems(id).then(function (n) {
           return {
             id: id,
             name: f.Name,
@@ -1517,7 +1530,7 @@ var LIB_TYPES = {
           .forEach(function (f) {
             var o = document.createElement('option');
             o.value = f.id;
-            o.textContent = f.name + '  (' + f.count.toLocaleString() + ' tracks)';
+            o.textContent = f.name + '  (' + f.count.toLocaleString() + ' items)';
             og.appendChild(o);
           });
         sel.appendChild(og);
