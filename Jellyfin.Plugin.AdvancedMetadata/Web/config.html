@@ -118,6 +118,14 @@
   .am-act-danger:hover { background: #4a2626; }
   .am-btn-danger { background: #b5651d; border-color: #b5651d; color: #ffffff; }
   .am-btn-danger:hover { background: #c9762b; }
+  .am-risk { border: 1px solid #6b3030; border-left: 5px solid #e5534b; background: rgba(229,83,75,.12);
+             border-radius: 8px; padding: 14px 16px; max-width: 680px; margin: 12px 0 20px; color: #ffc9c4; }
+  .am-risk strong { color: #ffd9d5; display: block; margin-bottom: 6px; font-size: 1.02em; }
+  .am-risk ul { margin: 6px 0 0; padding-left: 20px; }
+  .am-risk li { margin-bottom: 5px; }
+  .am-paused { border: 1px solid #6b5220; border-left: 5px solid #e2a03f; background: rgba(226,160,63,.12);
+               border-radius: 8px; padding: 12px 15px; max-width: 680px; margin: 12px 0; color: #f0cf94; }
+  #AdvancedMetadataConfigPage input[type="file"] { color: #c9d1d9; font-family: inherit; font-size: 14px; }
   @media (max-width: 760px) {
     .am-hide-sm { display: none; }
     #AdvancedMetadataConfigPage { padding: 14px 12px 40px; }
@@ -449,12 +457,21 @@
   <!-- ============ ADVANCED ============ -->
   <div class="am-panel" data-panel="advanced">
     <h2>Advanced</h2>
-    <p style="max-width:680px">
-      For advanced users. Take a full backup before making changes on this page.
-    </p>
+
+    <div class="am-risk">
+      <strong>This page can destroy data. Read before you press anything.</strong>
+      <ul>
+        <li><b>Rebuild Store</b> and <b>Delete All Mappings</b> empty the index. A scan rebuilds it, but you wait for the scan.</li>
+        <li><b>Reset All Data Overrides</b> throws away every edit and deletion you have made.</li>
+        <li><b>Restore</b> overwrites the index <em>and</em> every mapping with the contents of a zip. Anything edited since that zip was made is gone.</li>
+        <li>Your audio and video files and Jellyfin's own database are never touched, so the files themselves are always safe.</li>
+        <li>Take a backup before changing anything here.</li>
+      </ul>
+    </div>
 
     <h3>Store</h3>
     <div class="am-card">
+      <div class="am-kv"><span>Store folder</span><span id="kvStoreFolder">—</span></div>
       <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
       <div class="am-kv"><span>Schema version</span><span id="kvSchema">—</span></div>
       <div class="am-kv"><span>Mappings</span><span id="kvMappingCount">—</span></div>
@@ -506,12 +523,60 @@
     <div class="am-sep"></div>
 
     <h3>Backups</h3>
-    <div class="am-hint" style="max-width:680px">
-      Plugin data lives alongside the plugin on the server — on a Synology NAS that is typically
-      <span class="am-mono">/volume1/@appdata/jellyfin/data/plugins</span>. The exact path is shown
-      above. Include that folder in your NAS backups.<br /><br />
-      Download and restore tools are coming in the next release.
+
+    <div id="backupPaused" class="am-paused" style="display:none">
+      <strong>Backup and restore are paused.</strong> A scan or an update is running, so the index is
+      being written to. A copy taken now could catch it half-written, and a restore could be
+      overwritten by the write still in flight. Both resume on their own when the activity stops.
     </div>
+
+    <div class="am-card" style="max-width:680px">
+      <strong>What a backup contains</strong>
+      <div class="am-hint" style="margin-top:6px">
+        One zip holding the whole index database and a copy of your mappings. It is the only complete
+        snapshot the plugin can take, and the only thing a restore will accept.
+      </div>
+    </div>
+
+    <div class="am-actions">
+      <button id="btnBackup" class="am-btn am-btn-primary">Download Backup</button>
+    </div>
+    <div id="backupStatus" class="am-status"></div>
+
+    <div class="am-sep"></div>
+
+    <h3>Restore</h3>
+
+    <div class="am-card" style="max-width:680px">
+      <strong>Restoring replaces everything</strong>
+      <div class="am-hint" style="margin-top:6px">
+        The current index and all mappings are overwritten by the contents of the zip. A scan can
+        rebuild the index from your files, but any edits or deletions you made to indexed values are
+        lost with the old index.
+      </div>
+    </div>
+
+    <div class="am-field" style="max-width:680px">
+      <div class="am-label">Backup file</div>
+      <input id="restoreFile" type="file" accept=".zip" />
+      <div class="am-hint">Choose a zip made by Download Backup above. The current index is copied into
+      the store folder as <span class="am-mono">pre-restore-…db</span> first, and only the three most
+      recent of those are kept.</div>
+    </div>
+
+    <div class="am-actions">
+      <button id="btnRestore" class="am-btn am-btn-danger">Restore From Backup</button>
+    </div>
+    <div id="restoreStatus" class="am-status"></div>
+
+    <div class="am-hint" style="max-width:680px; margin-top:16px">
+      If the counts on this page look wrong straight after a restore, restart Jellyfin so the database
+      is reopened cleanly. You can do that here.
+    </div>
+    <div class="am-actions">
+      <button id="btnRestart" class="am-btn">Restart Jellyfin</button>
+    </div>
+    <div id="restartStatus" class="am-status"></div>
   </div>
 
 <script type="text/javascript">
@@ -1412,6 +1477,7 @@ function deleteValue(r) {
     if (!task) {
       $('scanText').textContent = 'Scheduled task not found. Try restarting Jellyfin.';
       $('btnScan').disabled = true;
+      refreshBackupGate();
       return;
     }
     var state = task.State || 'Idle';
@@ -1448,6 +1514,7 @@ function deleteValue(r) {
     $('btnDeleteAll').disabled = running;
     $('btnRebuild').disabled = running;
     disableLinks(running);
+    refreshBackupGate();
   }
 
   function renderScanSummary() {
@@ -1550,9 +1617,8 @@ var LIB_TYPES = {
       if ($('chkFull').checked && !window.confirm(
           'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) { return; }
         cfg.FullRescanRequested = $('chkFull').checked;
-          cfg.PendingScanLibraryId = $('scanLibrary').value;
-          postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
-      saveConfig(cfg)
+        cfg.PendingScanLibraryId = $('scanLibrary').value;
+        saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
         .then(function () {
       setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
@@ -1580,6 +1646,7 @@ var LIB_TYPES = {
 
   function loadInfo() {
     apiGet('AdvancedMetadataData/Info').then(function (i) {
+      if ($('kvStoreFolder')) { $('kvStoreFolder').textContent = i.StoreFolder || '—'; }
       if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || '—'; }
       if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || '—'; }
       if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
@@ -1619,6 +1686,77 @@ function applyDiagVisibility() {
     });
   }
   
+ function refreshBackupGate() {
+    var busy = !!(scanRunning || uiWaiting);
+    if ($('btnBackup')) { $('btnBackup').disabled = busy; }
+    if ($('btnRestore')) { $('btnRestore').disabled = busy; }
+    if ($('backupPaused')) { $('backupPaused').style.display = busy ? 'block' : 'none'; }
+  }
+
+  function wireBackup() {
+    $('btnBackup').addEventListener('click', function () {
+      setStatus('backupStatus', 'info', 'Preparing backup…');
+      apiFetch('AdvancedMetadataData/Backup', { headers: headers(false), credentials: 'same-origin' })
+        .then(function (r) { return r.blob(); })
+        .then(function (b) {
+          var d = new Date();
+          var p = function (n) { return (n < 10 ? '0' : '') + n; };
+          var name = 'advancedmetadata-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+            + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.zip';
+          var u = URL.createObjectURL(b);
+          var a = document.createElement('a');
+          a.href = u; a.download = name;
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 2000);
+          setStatus('backupStatus', 'ok', 'Backup downloaded as ' + name + '.');
+        })
+        .catch(function (e) {
+          setStatus('backupStatus', 'err', /409/.test(e.message)
+            ? 'Paused — something is running. Try again when it stops.'
+            : 'BACKUP FAILED: ' + e.message);
+        });
+    });
+
+    $('btnRestore').addEventListener('click', function () {
+      var f = $('restoreFile').files && $('restoreFile').files[0];
+      if (!f) { setStatus('restoreStatus', 'err', 'Choose a backup zip first.'); return; }
+      if (!window.confirm('WARNING: This replaces the entire plugin index AND every mapping with the '
+          + 'contents of the zip.\n\nEdits and deletions you made to indexed values will be lost.\n\n'
+          + 'A safety copy of the current index is kept in the store folder. Continue?')) { return; }
+
+      var fd = new FormData();
+      fd.append('file', f, f.name);
+      setStatus('restoreStatus', 'info', 'Restoring…');
+
+      apiFetch('AdvancedMetadataData/Restore', {
+        method: 'POST', headers: headers(false), credentials: 'same-origin', body: fd
+      })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+          var j = {};
+          try { j = JSON.parse(txt); } catch (e) { j = {}; }
+          setStatus('restoreStatus', 'ok', 'Restore complete — ' + (j.Items != null ? j.Items : 0)
+            + ' items and ' + (j.Values != null ? j.Values : 0) + ' values now in the index. Safety copy: '
+            + (j.Safety || 'kept in the store folder') + '.');
+          $('restoreFile').value = '';
+          return loadConfig().then(function () { loadInfo(); renderManage(); refreshDataFields(); });
+        })
+        .catch(function (e) {
+          setStatus('restoreStatus', 'err', /409/.test(e.message)
+            ? 'Paused — something is running. Try again when it stops.'
+            : 'RESTORE FAILED: ' + e.message);
+        });
+    });
+
+    $('btnRestart').addEventListener('click', function () {
+      if (!window.confirm('Restart Jellyfin now? The web interface will disconnect for a minute or two.')) { return; }
+      setStatus('restartStatus', 'info', 'Restarting…');
+      apiPost('System/Restart')
+        .then(function () { setStatus('restartStatus', 'ok', 'Restart requested. Reload the page once the server is back.'); })
+        .catch(function (e) { setStatus('restartStatus', 'err', 'RESTART FAILED: ' + e.message); });
+    });
+  }
+
   function wireAdvanced() {
     $('btnRebuild').addEventListener('click', function () {
       if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
@@ -1662,7 +1800,7 @@ function applyDiagVisibility() {
       unhideAncestors();
       unhidInfo = 'ok';
 
-    [wireCreate, wireManage, wireData, wireScan, wireAdvanced, wireDiag, watchRoute, applyDiagVisibility].forEach(function (fn) {
+     [wireCreate, wireManage, wireData, wireScan, wireAdvanced, wireBackup, wireDiag, watchRoute, applyDiagVisibility].forEach(function (fn) {
         try { fn(); } catch (e) { console.warn('Advanced Metadata: wiring step failed', e); }
       });
       diag('wiring done');
