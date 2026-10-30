@@ -796,11 +796,17 @@
       }
     });
 
-   $('btnCreate').addEventListener('click', function () {
-    if ($('newDelims').value.trim() && !$('newDelimMode').value) {
-      alert('Choose how the delimiters should apply — remove, add or only — or clear the box to inherit the default list.');
-      return;
-    }
+  $('btnCreate').addEventListener('click', function () {
+      var dChars = $('newDelims').value.trim();
+      var dMode = $('newDelimMode').value;
+      if (dChars && !dMode) {
+        alert('Choose how the delimiters should apply — remove, add or only — or clear the box to inherit the default list.');
+        return;
+      }
+      if (dChars && dMode === 'remove' && !/[\/|;:]/.test(dChars)) {
+        alert('None of those characters are in the default list (/ | ; :), so removing them would change nothing for this tag.\n\nCheck the characters and try again, or clear the box to inherit the default list.');
+        return;
+      }
       var tag = $('newTag').value.trim();
       var display = $('newDisplay').value.trim();
       var hier = $('newHierarchy').value;
@@ -813,16 +819,14 @@
       cfg.Mappings.push({
         Id: guid(), SourceTag: tag.toUpperCase(), DisplayName: display || tag.toUpperCase(),
         Hierarchy: hier, CreatedUtc: new Date().toISOString(), Delimiters: $('newDelims').value,
-        DelimiterMode: $('newDelimMode').value
+        DelimiterMode: $('newDelims').value.trim() ? $('newDelimMode').value : ''
       });
 
       saveConfig(cfg).then(function () {
         setStatus('createStatus', 'ok', 'Mapping "' + (display || tag.toUpperCase()) + '" created.');
-        if ($('newDelims').value.trim() && $('newDelimMode').value === 'remove' &&
-            !/[\/|;:]/.test($('newDelims').value)) {
-          alert('None of the characters you entered are in the default list (/ | ; :), so removing them changes nothing for this tag.');
-        }
-        $('newTag').value = ''; $('newDisplay').value = ''; $('newDelims').value = '';
+        $('newTag').value = ''; $('newDisplay').value = '';
+          $('newHierarchy').value = '';
+          $('newDelims').value = ''; $('newDelimMode').value = '';
         $('newDelimMode').value = '';
         renderManage(); refreshDataFields();
       }).catch(function (e) { setStatus('createStatus', 'err', 'SAVE FAILED: ' + e.message); });
