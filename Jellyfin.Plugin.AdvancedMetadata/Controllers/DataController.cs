@@ -32,11 +32,15 @@ public class DataController : ControllerBase
         _tasks = tasks;
     }
 
-    private bool ScanRunning()
+    private static bool ScanRunning()
     {
-        var w = _tasks.GetTask(ScanKey);
-        if (w is null) { return false; }
-        return w.State == TaskState.Running || w.State == TaskState.Cancelling;
+        var cfg = Plugin.Instance?.Configuration;
+        if (cfg is null) { return false; }
+        if (!string.Equals(cfg.LastScanStatus, "Running", StringComparison.OrdinalIgnoreCase)) { return false; }
+
+        // A scan killed by a restart leaves the status stuck on Running; ignore anything ancient.
+        var started = cfg.LastScanStartedUtc;
+        return started is null || (DateTime.UtcNow - started.Value) < TimeSpan.FromHours(12);
     }
 
     private static readonly byte[] SqliteMagic =
