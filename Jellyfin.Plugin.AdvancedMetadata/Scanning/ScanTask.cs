@@ -223,7 +223,8 @@ public class ScanTask : IScheduledTask
                         if (unchanged && !backfill.Contains(m.SourceTag)) { continue; }
 
                         var extra = (m.Delimiters ?? string.Empty).Trim();
-                        var mode = (m.DelimiterMode ?? "remove").Trim().ToLowerInvariant();
+                        var mode = (m.DelimiterMode ?? string.Empty).Trim().ToLowerInvariant();
+                        if (mode.Length == 0) { mode = "remove"; }
                         char[] mDelims;
                         if (extra.Length == 0) { mDelims = delims; }
                         else if (mode == "only") { mDelims = extra.ToCharArray(); }
