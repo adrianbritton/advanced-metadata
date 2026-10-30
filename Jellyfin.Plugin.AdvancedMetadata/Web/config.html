@@ -406,9 +406,9 @@
       <select id="scanLibrary">
         <option value="">— All Libraries —</option>
       </select>
-      <div class="am-hint">Only libraries containing content are listed. The choice is
-      remembered, including for the scheduled scan — pick <b>— All Libraries —</b> to cover
-      everything again. Full Rescan re-reads only the chosen library and leaves the rest intact.</div>
+    <div class="am-hint">Only libraries containing content items are listed, and a scan initiated here
+          covers the chosen library; the scheduled scan always covers every library. Full Rescan
+          re-reads only the chosen library and leaves the rest intact.</div>
     </div>
 
     <div class="am-actions">
@@ -1549,7 +1549,9 @@ var LIB_TYPES = {
       if (!task) { return; }
       if ($('chkFull').checked && !window.confirm(
           'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) { return; }
-      cfg.FullRescanRequested = $('chkFull').checked;
+        cfg.FullRescanRequested = $('chkFull').checked;
+          cfg.PendingScanLibraryId = $('scanLibrary').value;
+          postJson('Plugins/' + PLUGIN_ID + '/Configuration', cfg)
       saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
         .then(function () {
