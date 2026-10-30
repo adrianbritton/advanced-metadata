@@ -145,6 +145,20 @@ public class ScanTask : IScheduledTask
 
             var items = _library.GetItemList(query).OfType<Audio>().ToList();
 
+            if (items.Count == 0)
+            {
+                cfg.LastScanTotal = 0;
+                cfg.LastScanStage = "Nothing to scan";
+                cfg.LastScanStatus = "Complete";
+                cfg.LastScanFinishedUtc = DateTime.UtcNow;
+                cfg.LastScanSummary = scoped
+                    ? "No audio tracks found in " + scopeName + "."
+                    : "No audio tracks found.";
+                plugin.UpdateConfiguration(cfg);
+                _logger.LogWarning("Advanced Metadata: nothing to scan ({Summary})", cfg.LastScanSummary);
+                return;
+            }
+
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
             Stage("Scanning " + items.Count + " tracks");
