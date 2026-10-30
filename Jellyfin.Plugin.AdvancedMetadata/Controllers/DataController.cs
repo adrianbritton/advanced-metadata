@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using Jellyfin.Plugin.AdvancedMetadata.Configuration;
 using Jellyfin.Plugin.AdvancedMetadata.Store;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Tasks;
@@ -33,7 +34,7 @@ public class DataController : ControllerBase
 
     private bool ScanRunning()
     {
-        var w = _tasks.Tasks.FirstOrDefault(t => t.ScheduledTask.Key == ScanKey);
+        var w = _tasks.GetTask(ScanKey);
         if (w is null) { return false; }
         return w.State == TaskState.Running || w.State == TaskState.Cancelling;
     }
@@ -400,7 +401,7 @@ public class DataController : ControllerBase
                         {
                             var cfg = Plugin.Instance.Configuration;
                             cfg.Mappings = imported;
-                            cfg.KnownMappingIds = new List<string>();
+                            cfg.KnownMappingIds = new List<Guid>();
                             Plugin.Instance.UpdateConfiguration(cfg);
                         }
                     }
