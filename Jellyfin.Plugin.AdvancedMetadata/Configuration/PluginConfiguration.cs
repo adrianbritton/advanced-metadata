@@ -9,6 +9,7 @@ public class PluginConfiguration : BasePluginConfiguration
     public List<Mapping> Mappings { get; set; } = new();
 
     public string Delimiters { get; set; } = "/|;:";
+    public string ScanLibraryId { get; set; } = string.Empty;
 
     public List<string> Libraries { get; set; } = new();
 
