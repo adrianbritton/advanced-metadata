@@ -60,6 +60,28 @@ public class ScanTask : IScheduledTask
 
         var full = cfg.FullRescanRequested;
         cfg.FullRescanRequested = false;
+
+        // Optional single-library scope
+        var scopeId = Guid.Empty;
+        var scopeName = string.Empty;
+        if (Guid.TryParse(cfg.ScanLibraryId, out var wantedScope) && wantedScope != Guid.Empty)
+        {
+            var scopeItem = _library.GetItemById(wantedScope);
+            if (scopeItem is null)
+            {
+                _logger.LogWarning(
+                    "Advanced Metadata: scan library {Id} no longer exists, scanning every library instead",
+                    wantedScope);
+            }
+            else
+            {
+                scopeId = wantedScope;
+                scopeName = scopeItem.Name;
+            }
+        }
+
+        var scoped = scopeId != Guid.Empty;
+
         cfg.LastScanStartedUtc = DateTime.UtcNow;
         cfg.LastScanFinishedUtc = null;
         cfg.LastScanError = string.Empty;
@@ -69,7 +91,8 @@ public class ScanTask : IScheduledTask
         cfg.LastScanErrors = 0;
         cfg.LastScanBackfill = 0;
         cfg.LastScanTotal = 0;
-        cfg.LastScanType = full ? "Full Scan" : "Incremental Scan";
+        cfg.LastScanType = (full ? "Full Scan" : "Incremental Scan")
+            + (scoped ? " — " + scopeName : string.Empty);
         cfg.LastScanStatus = "Running";
         cfg.LastScanStage = "Starting";
         cfg.LastScanSummary = string.Empty;
@@ -102,19 +125,25 @@ public class ScanTask : IScheduledTask
 
             Stage("Pruning and syncing mappings");
             _store.SyncMappings(mappings);
-            if (full)
+
+            // A scoped full rescan clears per item in the loop, so other libraries keep their values.
+            if (full && !scoped)
             {
                 foreach (var m in mappings) { _store.ClearField(m.SourceTag); }
             }
 
             Stage("Reading library item list");
-            var items = _library.GetItemList(new InternalItemsQuery
+            var query = new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { BaseItemKind.Audio },
                 Recursive = true,
                 IsVirtualItem = false,
                 EnableTotalRecordCount = false
-            }).OfType<Audio>().ToList();
+            };
+
+            if (scoped) { query.AncestorIds = new[] { scopeId }; }
+
+            var items = _library.GetItemList(query).OfType<Audio>().ToList();
 
             cfg.LastScanTotal = items.Count;
             plugin.UpdateConfiguration(cfg);
@@ -232,11 +261,15 @@ public class ScanTask : IScheduledTask
                         else { mDelims = delims.Concat(extra.ToCharArray()).Distinct().ToArray(); }
                         if (mDelims.Length == 0) { mDelims = new[] { '/', '|', ';', ':' }; }
                         var vals = ReadTag(path, m.SourceTag, mDelims);
-                        if (vals.Count == 0) { continue; }
+
+                        // On a full scan an empty result still has to overwrite, or removed tags linger.
+                        if (vals.Count == 0 && !full) { continue; }
 
                         _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
                         _store.ApplyOverrides(key, m.SourceTag);
                         values += vals.Count;
+
+                        if (vals.Count == 0) { continue; }
 
                         if (albumId.HasValue && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
                         {
