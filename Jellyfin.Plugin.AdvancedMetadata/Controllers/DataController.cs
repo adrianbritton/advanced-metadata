@@ -433,9 +433,8 @@ public class DataController : ControllerBase
                 {
                     Items = items,
                     Values = values,
-                    Safety = System.IO.File.Exists(safety) ? Path.GetFileName(safety) : string.Empty
+                   Safety = System.IO.File.Exists(safety) ? Path.GetFileName(safety) : string.Empty
                 });
-            }
         }
         catch (Exception ex)
         {
