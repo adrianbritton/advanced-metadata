@@ -133,17 +133,25 @@ public class ScanTask : IScheduledTask
             }
 
             Stage("Reading library item list");
-            var query = new InternalItemsQuery
+            List<BaseItem> items;
+
+            if (scoped)
             {
-                IncludeItemTypes = new[] { BaseItemKind.Audio },
-                Recursive = true,
-                IsVirtualItem = false,
-                EnableTotalRecordCount = false
-            };
-
-            if (scoped) { query.AncestorIds = new[] { scopeId }; }
-
-            var items = _library.GetItemList(query).OfType<Audio>().ToList();
+                var folder = _library.GetItemById(scopeId) as Folder;
+                items = (folder?.GetRecursiveChildren() ?? Enumerable.Empty<BaseItem>())
+                    .Where(i => !i.IsFolder && !i.IsVirtualItem && !string.IsNullOrEmpty(i.Path))
+                    .ToList();
+            }
+            else
+            {
+                items = _library.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { BaseItemKind.Audio },
+                    Recursive = true,
+                    IsVirtualItem = false,
+                    EnableTotalRecordCount = false
+                }).ToList();
+            }
 
             if (items.Count == 0)
             {
@@ -152,8 +160,8 @@ public class ScanTask : IScheduledTask
                 cfg.LastScanStatus = "Complete";
                 cfg.LastScanFinishedUtc = DateTime.UtcNow;
                 cfg.LastScanSummary = scoped
-                    ? "No audio tracks found in " + scopeName + "."
-                    : "No audio tracks found.";
+                    ? "No items found in " + scopeName + "."
+                    : "No audio items found.";
                 plugin.UpdateConfiguration(cfg);
                 _logger.LogWarning("Advanced Metadata: nothing to scan ({Summary})", cfg.LastScanSummary);
                 return;
@@ -251,7 +259,7 @@ public class ScanTask : IScheduledTask
                     long itemId;
                     try
                     {
-                        itemId = _store.UpsertItem(key, "Audio", item.Name, artist, album, path, mtime, size);
+                        itemId = _store.UpsertItem(key, item.GetType().Name, item.Name, artist, album, path, mtime, size);
                         if (albumId.HasValue) { _store.SetItemParent(key, albumId.Value.ToString("N")); }
                     }
                     catch (Exception ex)
