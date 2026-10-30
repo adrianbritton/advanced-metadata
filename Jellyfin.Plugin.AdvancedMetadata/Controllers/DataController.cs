@@ -323,34 +323,46 @@ public class DataController : ControllerBase
                 upload.CopyTo(fs);
             }
 
-            ZipArchive zip;
-            try { zip = ZipFile.OpenRead(zipPath); }
-            catch { return BadRequest(new { Message = "That file is not a zip archive." }); }
+            var staged = Path.Combine(work, "index.db");
+            string? mappingsJson = null;
 
-            using (zip)
+            if (IsSqlite(zipPath))
             {
-                var dbEntry = zip.Entries.FirstOrDefault(e =>
-                    string.Equals(e.Name, "index.db", StringComparison.OrdinalIgnoreCase));
-                if (dbEntry is null)
+                System.IO.File.Copy(zipPath, staged, true);
+            }
+            else
+            {
+                ZipArchive zip;
+                try { zip = ZipFile.OpenRead(zipPath); }
+                catch
                 {
-                    return BadRequest(new { Message = "The archive does not contain index.db." });
+                    return BadRequest(new { Message = "That file is neither a plugin backup zip nor a SQLite database." });
                 }
-
-                var staged = Path.Combine(work, "index.db");
-                dbEntry.ExtractToFile(staged, true);
-                if (!IsSqlite(staged))
+    
+                using (zip)
                 {
-                    return BadRequest(new { Message = "index.db inside the archive is not a SQLite database." });
+                    var dbEntry = zip.Entries.FirstOrDefault(e =>
+                        string.Equals(e.Name, "index.db", StringComparison.OrdinalIgnoreCase));
+                    if (dbEntry is null)
+                    {
+                        return BadRequest(new { Message = "The archive does not contain index.db." });
+                    }
+    
+                    dbEntry.ExtractToFile(staged, true);
+                    if (!IsSqlite(staged))
+                    {
+                        return BadRequest(new { Message = "index.db inside the archive is not a SQLite database." });
+                    }
+    
+                    var jsonEntry = zip.Entries.FirstOrDefault(e =>
+                        string.Equals(e.Name, "mappings.json", StringComparison.OrdinalIgnoreCase));
+                    if (jsonEntry is not null)
+                    {
+                        using var sr = new StreamReader(jsonEntry.Open());
+                        mappingsJson = sr.ReadToEnd();
+                    }
                 }
-
-                string? mappingsJson = null;
-                var jsonEntry = zip.Entries.FirstOrDefault(e =>
-                    string.Equals(e.Name, "mappings.json", StringComparison.OrdinalIgnoreCase));
-                if (jsonEntry is not null)
-                {
-                    using var sr = new StreamReader(jsonEntry.Open());
-                    mappingsJson = sr.ReadToEnd();
-                }
+            }
 
                 var safety = Path.Combine(folder, "pre-restore-"
                     + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + ".db");
