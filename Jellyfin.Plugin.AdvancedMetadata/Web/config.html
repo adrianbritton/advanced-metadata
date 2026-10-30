@@ -401,6 +401,15 @@
       tick <strong>Full Rescan</strong> below — otherwise the new mapping will have nothing to show.
     </div>
     
+    <div class="am-field" style="max-width:620px">
+      <div class="am-label">Library to scan</div>
+      <select id="scanLibrary">
+        <option value="">— All music libraries —</option>
+      </select>
+      <div class="am-hint">Choose one library to scan on its own. Full Rescan then only re-reads
+      that library, and the other libraries keep their indexed values.</div>
+    </div>
+
     <div class="am-actions">
       <button id="btnScan" class="am-btn am-btn-primary">Start Scan</button>
       <button id="btnCancel" class="am-btn am-btn-danger">Stop Scan</button>
@@ -773,7 +782,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
       p.classList.toggle('active', p.getAttribute('data-panel') === name);
     });
-    if (name === 'scan') { refreshTask(); }
+    if (name === 'scan') { refreshTask(); loadLibraries(); }
     if (name === 'data') { refreshDataFields(); loadInfo(); }
   };
 
@@ -962,6 +971,17 @@ function renderManage() {
         save.className = 'am-act';
         save.textContent = 'Save';
         save.addEventListener('click', function () {
+          var dExtra = $('editDelims').value.trim();
+          var dMode = $('editDelimMode').value;
+          if (dMode === 'remove' && dExtra) {
+            var dBase = cfg.Delimiters || '/|;:';
+            var dBad = dExtra.split('').filter(function (c) { return dBase.indexOf(c) < 0; });
+            if (dBad.length) {
+              setStatus('manageStatus', 'err', 'Cannot remove "' + dBad.join(' ')
+                + '" — not in the default list of ' + dBase + '. Check and try again.');
+              return;
+            }
+          }
           m.DisplayName = $('editName').value.trim() || m.SourceTag;
           var originalHierarchy = m.Hierarchy;
           m.Hierarchy = $('editHier').value;
@@ -1442,6 +1462,25 @@ function deleteValue(r) {
     }).catch(function () { /* ignore */ });
   }
 
+  function loadLibraries() {
+    var sel = $('scanLibrary');
+    if (!sel) { return; }
+    apiGet('Library/VirtualFolders').then(function (list) {
+      sel.innerHTML = '<option value="">— All music libraries —</option>';
+      (list || []).filter(function (f) {
+        return !f.CollectionType || /music/i.test(f.CollectionType);
+      }).forEach(function (f) {
+        var id = f.ItemId || f.Id;
+        if (!id) { return; }
+        var o = document.createElement('option');
+        o.value = id;
+        o.textContent = f.Name;
+        sel.appendChild(o);
+      });
+      sel.value = (cfg && cfg.ScanLibraryId) || '';
+    }).catch(function () { /* ignore */ });
+  }
+
   function wireScan() {
     $('btnScan').addEventListener('click', function () {
       if (!task) { return; }
@@ -1456,6 +1495,14 @@ function deleteValue(r) {
           setTimeout(refreshTask, 700);
         })
         .catch(function (e) { setStatus('scanStatus', 'err', 'Could not start scan: ' + e.message); });
+    });
+
+    $('scanLibrary').addEventListener('change', function () {
+      if (!cfg) { return; }
+      cfg.ScanLibraryId = this.value;
+      saveConfig(cfg)
+        .then(function () { setStatus('scanStatus', 'ok', 'Scan library saved.'); })
+        .catch(function (e) { setStatus('scanStatus', 'err', 'SAVE FAILED: ' + e.message); });
     });
 
     $('btnCancel').addEventListener('click', function () {
