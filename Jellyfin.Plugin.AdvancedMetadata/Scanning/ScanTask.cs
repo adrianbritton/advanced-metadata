@@ -64,7 +64,11 @@ public class ScanTask : IScheduledTask
         // Optional single-library scope
         var scopeId = Guid.Empty;
         var scopeName = string.Empty;
-        if (Guid.TryParse(cfg.ScanLibraryId, out var wantedScope) && wantedScope != Guid.Empty)
+        // Only a manually started scan carries a scope. The scheduled run is always global.
+        var requestedScope = cfg.PendingScanLibraryId;
+        cfg.PendingScanLibraryId = string.Empty;
+
+        if (Guid.TryParse(requestedScope, out var wantedScope) && wantedScope != Guid.Empty)
         {
             var scopeItem = _library.GetItemById(wantedScope);
             if (scopeItem is null)
