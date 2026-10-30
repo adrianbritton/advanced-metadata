@@ -254,11 +254,11 @@
     <table class="am-table am-table-auto">
       <thead>
         <tr>
-          <th>Tag</th>
-          <th>Display name</th>
+          <th data-sort="SourceTag">Tag</th>
+          <th data-sort="DisplayName">Display name</th>
           <th>Applies to</th>
           <th>Delimiters</th>
-          <th class="am-hide-sm">Created</th>
+          <th class="am-hide-sm" data-sort="CreatedUtc">Created</th>
           <th style="white-space:nowrap;">Actions</th>
         </tr>
       </thead>
@@ -526,7 +526,8 @@
   var editingId = null;
   var sortKey = 'Artist';
   var sortAsc = true;
-
+  var MANAGE_SORT = { key: 'SourceTag', dir: 1 };
+  
   var HIER = {
     songs: 'Songs only',
     songs_albums: 'Songs + Albums',
@@ -795,7 +796,11 @@
       }
     });
 
-    $('btnCreate').addEventListener('click', function () {
+   $('btnCreate').addEventListener('click', function () {
+    if ($('newDelims').value.trim() && !$('newDelimMode').value) {
+      alert('Choose how the delimiters should apply — remove, add or only — or clear the box to inherit the default list.');
+      return;
+    }
       var tag = $('newTag').value.trim();
       var display = $('newDisplay').value.trim();
       var hier = $('newHierarchy').value;
@@ -875,9 +880,31 @@ function renderManage() {
     var body = $('manageRows');
     if (!body) { return; }
     body.innerHTML = '';
-    var list = cfg.Mappings || [];
+   var list = (cfg.Mappings || []).slice().sort(function (a, b) {
+      var k = MANAGE_SORT.key;
+      var av = k === 'CreatedUtc' ? (a.CreatedUtc || '') : (a[k] || '');
+      var bv = k === 'CreatedUtc' ? (b.CreatedUtc || '') : (b[k] || '');
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * MANAGE_SORT.dir;
+    });
     $('manageEmpty').style.display = list.length ? 'none' : 'block';
     if ($('kvMappingCount')) { $('kvMappingCount').textContent = list.length; }
+
+    var tbl = body.closest ? body.closest('table') : null;
+        if (tbl) {
+          Array.prototype.forEach.call(tbl.querySelectorAll('thead th[data-sort]'), function (th) {
+            var base = th.getAttribute('data-label') || th.textContent.replace(/[ \u25B2\u25BC]+$/, '');
+            th.setAttribute('data-label', base);
+            th.style.cursor = 'pointer';
+            th.textContent = base + (MANAGE_SORT.key === th.getAttribute('data-sort')
+              ? (MANAGE_SORT.dir > 0 ? ' \u25B2' : ' \u25BC') : '');
+            th.onclick = function () {
+              var k = th.getAttribute('data-sort');
+              if (MANAGE_SORT.key === k) { MANAGE_SORT.dir = -MANAGE_SORT.dir; }
+              else { MANAGE_SORT.key = k; MANAGE_SORT.dir = 1; }
+              renderManage();
+            };
+          });
+        }
 
     list.forEach(function (m) {
       var tr = document.createElement('tr');
