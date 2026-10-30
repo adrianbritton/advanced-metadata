@@ -401,13 +401,14 @@
       tick <strong>Full Rescan</strong> below — otherwise the new mapping will have nothing to show.
     </div>
     
-    <div class="am-field" style="max-width:620px">
+    <div class="am-field" style="max-width:620px;margin-top:18px">
       <div class="am-label">Library to scan</div>
       <select id="scanLibrary">
-        <option value="">— All music libraries —</option>
+        <option value="">— All Libraries —</option>
       </select>
-      <div class="am-hint">Choose one library to scan on its own. Full Rescan then only re-reads
-      that library, and the other libraries keep their indexed values.</div>
+      <div class="am-hint">Only libraries containing audio tracks are listed. The choice is
+      remembered, including for the scheduled scan — pick <b>— All Libraries —</b> to cover
+      everything again. Full Rescan re-reads only the chosen library and leaves the rest intact.</div>
     </div>
 
     <div class="am-actions">
@@ -1462,23 +1463,72 @@ function deleteValue(r) {
     }).catch(function () { /* ignore */ });
   }
 
+var LIB_TYPES = {
+    music: 'Music',
+    musicvideos: 'Music Videos',
+    movies: 'Movies',
+    tvshows: 'TV Shows',
+    homevideos: 'Home Videos',
+    books: 'Books',
+    photos: 'Photos',
+    boxsets: 'Collections'
+  };
+
+  function countAudio(folderId) {
+    return apiGet('Items?parentId=' + folderId + '&includeItemTypes=Audio&recursive=true'
+      + '&limit=1&enableTotalRecordCount=true')
+      .then(function (r) { return (r && r.TotalRecordCount) || 0; })
+      .catch(function () { return 0; });
+  }
+
   function loadLibraries() {
     var sel = $('scanLibrary');
     if (!sel) { return; }
+    sel.innerHTML = '<option value="">Loading libraries…</option>';
     apiGet('Library/VirtualFolders').then(function (list) {
-      sel.innerHTML = '<option value="">— All music libraries —</option>';
-      (list || []).filter(function (f) {
-        return !f.CollectionType || /music/i.test(f.CollectionType);
-      }).forEach(function (f) {
+      var folders = (list || []).filter(function (f) { return f.ItemId || f.Id; });
+      return Promise.all(folders.map(function (f) {
         var id = f.ItemId || f.Id;
-        if (!id) { return; }
-        var o = document.createElement('option');
-        o.value = id;
-        o.textContent = f.Name;
-        sel.appendChild(o);
+        return countAudio(id).then(function (n) {
+          return {
+            id: id,
+            name: f.Name,
+            type: (f.CollectionType || '').toLowerCase(),
+            count: n
+          };
+        });
+      }));
+    }).then(function (all) {
+      var usable = all.filter(function (f) { return f.count > 0; });
+      sel.innerHTML = '<option value="">— All Libraries —</option>';
+      if (!usable.length) {
+        sel.innerHTML = '<option value="">— No library contains audio —</option>';
+        return;
+      }
+      var groups = {};
+      usable.forEach(function (f) {
+        var label = LIB_TYPES[f.type] || 'Other';
+        (groups[label] = groups[label] || []).push(f);
+      });
+      Object.keys(groups).sort().forEach(function (label) {
+        var og = document.createElement('optgroup');
+        og.label = label;
+        groups[label].sort(function (a, b) { return a.name.localeCompare(b.name); })
+          .forEach(function (f) {
+            var o = document.createElement('option');
+            o.value = f.id;
+            o.textContent = f.name + '  (' + f.count.toLocaleString() + ' tracks)';
+            og.appendChild(o);
+          });
+        sel.appendChild(og);
       });
       sel.value = (cfg && cfg.ScanLibraryId) || '';
-    }).catch(function () { /* ignore */ });
+      if (sel.value && !usable.some(function (f) { return f.id === sel.value; })) {
+        sel.value = '';
+      }
+    }).catch(function () {
+      sel.innerHTML = '<option value="">— Could not load libraries —</option>';
+    });
   }
 
   function wireScan() {
@@ -1500,9 +1550,9 @@ function deleteValue(r) {
     $('scanLibrary').addEventListener('change', function () {
       if (!cfg) { return; }
       cfg.ScanLibraryId = this.value;
-      saveConfig(cfg)
-        .then(function () { setStatus('scanStatus', 'ok', 'Scan library saved.'); })
-        .catch(function (e) { setStatus('scanStatus', 'err', 'SAVE FAILED: ' + e.message); });
+      saveConfig(cfg).catch(function (e) {
+        setStatus('scanStatus', 'err', 'SAVE FAILED: ' + e.message);
+      });
     });
 
     $('btnCancel').addEventListener('click', function () {
