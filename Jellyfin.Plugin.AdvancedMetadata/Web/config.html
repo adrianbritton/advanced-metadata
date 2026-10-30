@@ -118,6 +118,8 @@
   .am-act-danger:hover { background: #4a2626; }
   .am-btn-danger { background: #b5651d; border-color: #b5651d; color: #ffffff; }
   .am-btn-danger:hover { background: #c9762b; }
+  .am-btn-green { background: #2e8b57; color: #fff; border-color: #2e8b57; }
+  .am-btn-green:hover { background: #26734a; }
   .am-risk { border: 1px solid #6b3030; border-left: 5px solid #e5534b; background: rgba(229,83,75,.12);
              border-radius: 8px; padding: 14px 16px; max-width: 680px; margin: 12px 0 20px; color: #ffc9c4; }
   .am-risk strong { color: #ffd9d5; display: block; margin-bottom: 6px; font-size: 1.02em; }
@@ -459,15 +461,18 @@
     <h2>Advanced</h2>
 
     <div class="am-risk">
-      <strong>This page can destroy data. Read before you press anything.</strong>
+      <strong>This page can destroy plugin data. Read before you press anything.</strong>
       <ul>
         <li><b>Rebuild Store</b> and <b>Delete All Mappings</b> empty the index. A scan rebuilds it, but you wait for the scan.</li>
         <li><b>Reset All Data Overrides</b> throws away every edit and deletion you have made.</li>
-        <li><b>Restore</b> overwrites the index <em>and</em> every mapping with the contents of a zip. Anything edited since that zip was made is gone.</li>
-        <li>Your audio and video files and Jellyfin's own database are never touched, so the files themselves are always safe.</li>
-        <li>Take a backup before changing anything here.</li>
+        <li><b>Restore</b> overwrites the index <em>and</em> every mapping with the contents of a backup. Anything edited since that backup was made is gone.</li>
+        <li>Download a plugin backup from this page before you change anything here.</li>
       </ul>
     </div>
+    <p class="am-hint" style="max-width:680px; margin-top:-8px">
+      None of this touches your media files or Jellyfin's own database. The worst case here is a lost
+      index, which a scan rebuilds from the files.
+    </p>
 
     <h3>Store</h3>
     <div class="am-card">
@@ -533,8 +538,9 @@
     <div class="am-card" style="max-width:680px">
       <strong>What a backup contains</strong>
       <div class="am-hint" style="margin-top:6px">
-        One zip holding the whole index database and a copy of your mappings. It is the only complete
-        snapshot the plugin can take, and the only thing a restore will accept.
+        One zip holding the whole index database, that database's write-ahead file, and a copy of your
+        mappings. The two database files belong together — do not unpack and split them. This is the
+        only complete snapshot the plugin can take.
       </div>
     </div>
 
@@ -558,10 +564,11 @@
 
     <div class="am-field" style="max-width:680px">
       <div class="am-label">Backup file</div>
-      <input id="restoreFile" type="file" accept=".zip" />
-      <div class="am-hint">Choose a zip made by Download Backup above. The current index is copied into
-      the store folder as <span class="am-mono">pre-restore-…db</span> first, and only the three most
-      recent of those are kept.</div>
+      <input id="restoreFile" type="file" accept=".zip,.db" />
+      <div class="am-hint">Choose a zip made by Download Backup above, or a <span class="am-mono">.db</span>
+      file such as one of the pre-restore copies. Before anything is replaced the current index is
+      copied into the store folder as <span class="am-mono">pre-restore-…db</span>, so a restore can be
+      undone; only the three most recent of those are kept.</div>
     </div>
 
     <div class="am-actions">
@@ -574,7 +581,7 @@
       is reopened cleanly. You can do that here.
     </div>
     <div class="am-actions">
-      <button id="btnRestart" class="am-btn">Restart Jellyfin</button>
+      <button id="btnRestart" class="am-btn am-btn-green">Restart Jellyfin</button>
     </div>
     <div id="restartStatus" class="am-status"></div>
   </div>
@@ -1690,6 +1697,7 @@ function applyDiagVisibility() {
     var busy = !!(scanRunning || uiWaiting);
     if ($('btnBackup')) { $('btnBackup').disabled = busy; }
     if ($('btnRestore')) { $('btnRestore').disabled = busy; }
+    if ($('btnRestart')) { $('btnRestart').disabled = busy; }
     if ($('backupPaused')) { $('backupPaused').style.display = busy ? 'block' : 'none'; }
   }
 
@@ -1701,8 +1709,9 @@ function applyDiagVisibility() {
         .then(function (b) {
           var d = new Date();
           var p = function (n) { return (n < 10 ? '0' : '') + n; };
-          var name = 'advancedmetadata-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
-            + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + '.zip';
+          var name = 'Advanced Metadata backup ' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-'
+            + p(d.getDate()) + ' ' + p(d.getHours()) + '.' + p(d.getMinutes()) + '.'
+            + p(d.getSeconds()) + '.zip';
           var u = URL.createObjectURL(b);
           var a = document.createElement('a');
           a.href = u; a.download = name;
@@ -1735,9 +1744,13 @@ function applyDiagVisibility() {
         .then(function (txt) {
           var j = {};
           try { j = JSON.parse(txt); } catch (e) { j = {}; }
-          setStatus('restoreStatus', 'ok', 'Restore complete — ' + (j.Items != null ? j.Items : 0)
-            + ' items and ' + (j.Values != null ? j.Values : 0) + ' values now in the index. Safety copy: '
-            + (j.Safety || 'kept in the store folder') + '.');
+          var done = 'Restore complete — ' + (j.Items != null ? j.Items : 0) + ' items and '
+            + (j.Values != null ? j.Values : 0) + ' values now in the index.';
+          if (j.Safety) {
+            done += ' The index from before the restore was kept in the store folder as ' + j.Safety
+              + '; if this restore turns out to be wrong, copy that file off the server and restore it here.';
+          }
+          setStatus('restoreStatus', 'ok', done);
           $('restoreFile').value = '';
           return loadConfig().then(function () { loadInfo(); renderManage(); refreshDataFields(); });
         })
