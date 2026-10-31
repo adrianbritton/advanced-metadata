@@ -18,6 +18,9 @@ public record BrowseRow(string Id, string Kind, string Item, string Artist, stri
 
 public class MetadataStore
 {
+    private static readonly object InitGate = new();
+    private static bool _initialised;
+
     private readonly string _dbPath;
     private SqliteConnection? _shared;
     private SqliteTransaction? _sharedTx;
@@ -27,8 +30,19 @@ public class MetadataStore
     {
         var dir = Path.Combine(paths.DataPath, "advancedmetadata");
         Directory.CreateDirectory(dir);
-        _dbPath = Path.Combine(dir, "index.db");
-        try { Init(); }
+       _dbPath = Path.Combine(dir, "index.db");
+
+        try
+        {
+            lock (InitGate)
+            {
+                if (!_initialised)
+                {
+                    Init();
+                    _initialised = true;
+                }
+            }
+        }
         catch (Exception ex) { Log("Store unavailable: " + ex.Message); }
     }
 
@@ -65,6 +79,20 @@ public class MetadataStore
             Exec(c, "PRAGMA wal_checkpoint(TRUNCATE);");
         }
         catch { }
+    }
+
+   /// <summary>Folds the write-ahead log back into the main file without blocking writers.</summary>
+    public void CheckpointPassive()
+    {
+        try
+        {
+            using var c = NewConn();
+            Exec(c, "PRAGMA wal_checkpoint(PASSIVE);");
+        }
+        catch (Exception ex)
+        {
+            Log("Passive checkpoint failed: " + ex.Message);
+        }
     }
 
     /// <summary>Closes everything so the database file can be replaced underneath.</summary>
@@ -158,6 +186,7 @@ public class MetadataStore
         catch (SqliteException ex)
         {
             Log("Init failed: " + ex.Message + " — clearing WAL side files and retrying");
+            LogEnvironment();
             DropSideFiles();
             try
             {
@@ -187,12 +216,42 @@ public class MetadataStore
         try { SqliteConnection.ClearAllPools(); } catch { }
         foreach (var suffix in new[] { "-wal", "-shm" })
         {
+            var p = _dbPath + suffix;
             try
             {
-                var p = _dbPath + suffix;
                 if (File.Exists(p)) { File.Delete(p); }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log("Could not delete " + p + " — " + ex.Message);
+            }
+        }
+    }
+
+    /// <summary>Logs whether the folder can be written to and how much space is left.</summary>
+    private void LogEnvironment()
+    {
+        var probe = _dbPath + ".probe";
+        try
+        {
+            File.WriteAllText(probe, "x");
+            File.Delete(probe);
+            Log("Environment: store folder is writable");
+        }
+        catch (Exception ex)
+        {
+            Log("Environment: store folder is NOT writable — " + ex.Message);
+        }
+
+        try
+        {
+            var root = Path.GetPathRoot(_dbPath);
+            var drive = new DriveInfo(string.IsNullOrEmpty(root) ? "/" : root);
+            Log("Environment: free bytes on volume = " + drive.AvailableFreeSpace);
+        }
+        catch (Exception ex)
+        {
+            Log("Environment: free space unknown — " + ex.Message);
         }
     }
 
