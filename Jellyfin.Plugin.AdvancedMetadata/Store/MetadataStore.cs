@@ -21,10 +21,12 @@ public class MetadataStore
     private static readonly object InitGate = new();
     private static bool _initialised;
 
+    private static readonly object SharedGate = new();
+    private static SqliteConnection? _shared;
+    private static SqliteTransaction? _sharedTx;
+    private static readonly Dictionary<string, long> _fieldIds = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _dbPath;
-    private SqliteConnection? _shared;
-    private SqliteTransaction? _sharedTx;
-    private readonly Dictionary<string, long> _fieldIds = new(StringComparer.OrdinalIgnoreCase);
 
     public MetadataStore(IApplicationPaths paths)
     {
@@ -122,26 +124,33 @@ public class MetadataStore
 
     private SqliteConnection NewConn()
     {
-        var c = new SqliteConnection("Data Source=" + _dbPath);
+        var c = new SqliteConnection("Data Source=" + _dbPath + ";Default Timeout=60");
         c.Open();
+        Exec(c, "PRAGMA busy_timeout=60000;");
         return c;
     }
 
-    private T Read<T>(Func<SqliteConnection, T> fn)
+   private T Read<T>(Func<SqliteConnection, T> fn)
     {
-        if (_shared is not null) { return fn(_shared); }
-        using var c = NewConn();
-        return fn(c);
+        lock (SharedGate)
+        {
+            if (_shared is not null) { return fn(_shared); }
+            using var c = NewConn();
+            return fn(c);
+        }
     }
 
     private T Write<T>(Func<SqliteConnection, T> fn)
     {
-        if (_shared is not null) { return fn(_shared); }
-        using var c = NewConn();
-        using var tx = c.BeginTransaction();
-        var result = fn(c);
-        tx.Commit();
-        return result;
+        lock (SharedGate)
+        {
+            if (_shared is not null) { return fn(_shared); }
+            using var c = NewConn();
+            using var tx = c.BeginTransaction();
+            var result = fn(c);
+            tx.Commit();
+            return result;
+        }
     }
 
     private void Write(Action<SqliteConnection> fn)
@@ -150,29 +159,38 @@ public class MetadataStore
     /// <summary>Opens one connection + transaction for a whole scan.</summary>
     public void BeginBatch()
     {
-        if (_shared is not null) { return; }
-        _shared = NewConn();
-        _sharedTx = _shared.BeginTransaction();
-        _fieldIds.Clear();
+        lock (SharedGate)
+        {
+            if (_shared is not null) { return; }
+            _shared = NewConn();
+            _sharedTx = _shared.BeginTransaction();
+            _fieldIds.Clear();
+        }
     }
 
     /// <summary>Commits current work and starts a fresh transaction, keeping the connection.</summary>
     public void CommitBatch()
     {
-        if (_shared is null || _sharedTx is null) { return; }
-        _sharedTx.Commit();
-        _sharedTx.Dispose();
-        _sharedTx = _shared.BeginTransaction();
+        lock (SharedGate)
+        {
+            if (_shared is null || _sharedTx is null) { return; }
+            _sharedTx.Commit();
+            _sharedTx.Dispose();
+            _sharedTx = _shared.BeginTransaction();
+        }
     }
 
     public void EndBatch()
     {
-        try { _sharedTx?.Commit(); } catch { /* ignore */ }
-        _sharedTx?.Dispose();
-        _sharedTx = null;
-        _shared?.Dispose();
-        _shared = null;
-        _fieldIds.Clear();
+        lock (SharedGate)
+        {
+            try { _sharedTx?.Commit(); } catch { /* ignore */ }
+            _sharedTx?.Dispose();
+            _sharedTx = null;
+            _shared?.Dispose();
+            _shared = null;
+            _fieldIds.Clear();
+        }
     }
 
     /* ---------------- schema ---------------- */
@@ -345,12 +363,19 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
     public long UpsertItem(string jellyfinId, string kind, string? name, string? artist, string? album,
                            string? path, long mtime, long size)
     {
-        if (_shared is not null) { return UpsertItemInner(_shared, jellyfinId, kind, name, artist, album, path, mtime, size); }
-        using var c = NewConn();
-        using var tx = c.BeginTransaction();
-        var id = UpsertItemInner(c, jellyfinId, kind, name, artist, album, path, mtime, size);
-        tx.Commit();
-        return id;
+        lock (SharedGate)
+        {
+            if (_shared is not null)
+            {
+                return UpsertItemInner(_shared, jellyfinId, kind, name, artist, album, path, mtime, size);
+            }
+
+            using var c = NewConn();
+            using var tx = c.BeginTransaction();
+            var id = UpsertItemInner(c, jellyfinId, kind, name, artist, album, path, mtime, size);
+            tx.Commit();
+            return id;
+        }
     }
 
     private static long UpsertItemInner(SqliteConnection c, string jellyfinId, string kind, string? name,
