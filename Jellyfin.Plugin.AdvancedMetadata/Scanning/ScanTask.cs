@@ -192,7 +192,7 @@ public class ScanTask : IScheduledTask
             {
               Parallel.ForEach(
                     items,
-                    new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = ct },
+                   new ParallelOptions { MaxDegreeOfParallelism = 2, CancellationToken = ct },
                     item =>
                 {
                     var n = Interlocked.Increment(ref done);
@@ -210,9 +210,8 @@ public class ScanTask : IScheduledTask
                             cfg.LastScanSkipped = Volatile.Read(ref skipped);
                         }
 
+                       _store.CheckpointPassive();
                         plugin.UpdateConfiguration(cfg);
-
-                        if (n % (CommitEvery * 10) == 0) { _store.CheckpointPassive(); }
                     }
 
                     if (n % 100 == 0)
@@ -253,13 +252,10 @@ public class ScanTask : IScheduledTask
                         .Concat(new[] { "ARTIST", "ALBUMARTIST", "ALBUM" }));
 
                     var albumId = ResolveAlbumId(item);
-                    var albumItem = albumId.HasValue ? _library.GetItemById(albumId.Value) : null;
 
-                    var artist = ArtistNames(item)
-                        ?? GetStringList(item, "AlbumArtists")
-                        ?? ArtistNames(albumItem);
+                    var artist = ArtistNames(item) ?? GetStringList(item, "AlbumArtists");
                     var albumArtist = GetStringList(item, "AlbumArtists") ?? artist;
-                    var album = GetStringProperty(item, "Album") ?? albumItem?.Name;
+                    var album = GetStringProperty(item, "Album");
 
                     if (string.IsNullOrWhiteSpace(artist))
                     {
