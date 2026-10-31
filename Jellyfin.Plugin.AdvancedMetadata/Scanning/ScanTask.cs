@@ -181,43 +181,50 @@ public class ScanTask : IScheduledTask
 
             _store.BeginBatch();
 
-            var done = 0;
+           var done = 0;
             var skipped = 0;
             var values = 0;
             var errors = 0;
             var startedAt = DateTime.UtcNow;
+            var cfgGate = new object();
 
             try
             {
-               foreach (var item in items)
+              Parallel.ForEach(
+                    items,
+                    new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = ct },
+                    item =>
                 {
-                    ct.ThrowIfCancellationRequested();
-                    done++;
+                    var n = Interlocked.Increment(ref done);
 
                     var itemClock = System.Diagnostics.Stopwatch.StartNew();
 
-                    if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
+                    if (items.Count > 0) { progress.Report(n * 100.0 / items.Count); }
 
-                    if (done % CommitEvery == 0)
+                    if (n % CommitEvery == 0)
                     {
                         _store.CommitBatch();
-                        cfg.LastScanItems = done;
-                        cfg.LastScanSkipped = skipped;
+                        lock (cfgGate)
+                        {
+                            cfg.LastScanItems = n;
+                            cfg.LastScanSkipped = Volatile.Read(ref skipped);
+                        }
+
                         plugin.UpdateConfiguration(cfg);
 
-                        if (done % (CommitEvery * 10) == 0) { _store.CheckpointPassive(); }
+                        if (n % (CommitEvery * 10) == 0) { _store.CheckpointPassive(); }
                     }
 
-                    if (done % 100 == 0)
+                    if (n % 100 == 0)
                     {
                         var secs = Math.Max(1.0, (DateTime.UtcNow - startedAt).TotalSeconds);
                         _logger.LogInformation(
                             "Advanced Metadata: heartbeat {Done}/{Total} at {Rate:F2}/s (skipped {Skipped}, indexed {Values})",
-                            done, items.Count, done / secs, skipped, values);
+                            n, items.Count, n / secs, Volatile.Read(ref skipped), Volatile.Read(ref values));
                     }
 
                     var path = item.Path;
-                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) { continue; }
+                    if (string.IsNullOrEmpty(path) || !File.Exists(path)) { return; }
 
                     var key = item.Id.ToString("N");
                     long mtime;
@@ -230,16 +237,16 @@ public class ScanTask : IScheduledTask
                     }
                     catch (Exception ex)
                     {
-                        errors++;
+                        Interlocked.Increment(ref errors);
                         _logger.LogWarning(ex, "Advanced Metadata: could not stat {Path}", path);
-                        continue;
+                        return;
                     }
 
                     var unchanged = !full && _store.IsUnchanged(key, mtime, size);
                     if (unchanged && backfill.Count == 0 && !_store.ItemMissingMeta(key))
                     {
-                        skipped++;
-                        continue;
+                        Interlocked.Increment(ref skipped);
+                        return;
                     }
 
                     var raw = ReadRawTags(path, mappings.Select(m => m.SourceTag)
@@ -278,9 +285,9 @@ public class ScanTask : IScheduledTask
                     }
                     catch (Exception ex)
                     {
-                        errors++;
+                        Interlocked.Increment(ref errors);
                         _logger.LogWarning(ex, "Advanced Metadata: could not index {Path}", path);
-                        continue;
+                        return;
                     }
 
                     foreach (var m in mappings)
@@ -298,14 +305,13 @@ public class ScanTask : IScheduledTask
                         if (mDelims.Length == 0) { mDelims = new[] { '/', '|', ';', ':' }; }
                         var vals = SplitValues(raw, m.SourceTag, mDelims);
 
-                        // On a full scan an empty result still has to overwrite, or removed tags linger.
                         if (vals.Count == 0 && !full) { continue; }
 
                         try
                         {
                             _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
                             _store.ApplyOverrides(key, m.SourceTag);
-                            values += vals.Count;
+                            Interlocked.Add(ref values, vals.Count);
 
                             if (vals.Count > 0 && albumId.HasValue
                                 && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
@@ -330,20 +336,20 @@ public class ScanTask : IScheduledTask
                                 }
                             }
                         }
-                       catch (Exception ex)
+                        catch (Exception ex)
                         {
-                            errors++;
+                            Interlocked.Increment(ref errors);
                             _logger.LogWarning(ex, "Advanced Metadata: mapping {Tag} failed on {Path}", m.SourceTag, path);
                         }
                     }
 
-                    if (done <= 20)
+                    if (n <= 20)
                     {
                         _logger.LogInformation(
                             "Advanced Metadata: item {Done} took {Ms}ms ({Mappings} mapping(s))",
-                            done, itemClock.ElapsedMilliseconds, mappings.Count);
+                            n, itemClock.ElapsedMilliseconds, mappings.Count);
                     }
-                }
+                });
             }
            finally
             {
