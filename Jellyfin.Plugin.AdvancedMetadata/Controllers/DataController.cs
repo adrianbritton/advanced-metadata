@@ -109,7 +109,9 @@ public class DataController : ControllerBase
             SizeBytes = _store.SizeBytes,
             Items = counts.Items,
             Values = counts.Values,
-            Mappings = Plugin.Instance?.Configuration.Mappings.Count ?? 0
+            Mappings = Plugin.Instance?.Configuration.Mappings.Count ?? 0,
+            LastRestore = Plugin.Instance?.Configuration.LastRestoreUtc,
+            LastRestoreItems = Plugin.Instance?.Configuration.LastRestoreItems ?? 0
         });
     }
 
@@ -428,6 +430,14 @@ public class DataController : ControllerBase
                 }
 
                 PruneSafety(folder);
+
+                if (Plugin.Instance is not null)
+                {
+                    var after = Plugin.Instance.Configuration;
+                    after.LastRestoreUtc = DateTime.UtcNow;
+                    after.LastRestoreItems = items;
+                    Plugin.Instance.UpdateConfiguration(after);
+                }
 
                 return Ok(new
                 {
