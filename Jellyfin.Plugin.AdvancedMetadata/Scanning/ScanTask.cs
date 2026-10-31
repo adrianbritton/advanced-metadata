@@ -201,6 +201,8 @@ public class ScanTask : IScheduledTask
                         cfg.LastScanItems = done;
                         cfg.LastScanSkipped = skipped;
                         plugin.UpdateConfiguration(cfg);
+
+                        if (done % (CommitEvery * 10) == 0) { _store.CheckpointPassive(); }
                     }
 
                     if (done % 1000 == 0)
