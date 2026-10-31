@@ -230,7 +230,7 @@ public class DataController : ControllerBase
     {
         if (ScanRunning())
         {
-            return Conflict(new { Message = "A scan is running. Backups are paused so the copy cannot catch the index mid-write." });
+            return Ok(new { Message = "A scan is running. Backups are paused so the copy cannot catch the index mid-write." });
         }
 
         var db = _store.DbPath;
@@ -299,15 +299,15 @@ public class DataController : ControllerBase
     [RequestFormLimits(MultipartBodyLengthLimit = UploadLimit)]
     public ActionResult Restore()
     {
-        if (ScanRunning())
+       if (ScanRunning())
         {
-            return Conflict(new { Message = "A scan is running. Restores are paused so the index cannot be swapped mid-write." });
+            return Ok(new { Ok = false, Message = "A scan is running. Restores are paused so the index cannot be swapped mid-write." });
         }
 
         var upload = Request.Form.Files.FirstOrDefault();
         if (upload is null || upload.Length == 0)
         {
-            return BadRequest(new { Message = "No backup file was received." });
+            return Ok(new { Ok = false, Message = "No backup file was received." });
         }
 
         var db = _store.DbPath;
@@ -338,7 +338,7 @@ public class DataController : ControllerBase
                 try { zip = ZipFile.OpenRead(zipPath); }
                 catch
                 {
-                    return BadRequest(new { Message = "That file is neither a plugin backup zip nor a SQLite database." });
+                    return Ok(new { Ok = false, Message = "That file is neither a plugin backup zip nor a SQLite database." });
                 }
     
                 using (zip)
@@ -347,7 +347,7 @@ public class DataController : ControllerBase
                         string.Equals(e.Name, "index.db", StringComparison.OrdinalIgnoreCase));
                     if (dbEntry is null)
                     {
-                        return BadRequest(new { Message = "The archive does not contain index.db." });
+                        return Ok(new { Ok = false, Message = "The archive does not contain index.db." });
                     }
     
                    dbEntry.ExtractToFile(staged, true);
@@ -398,7 +398,7 @@ public class DataController : ControllerBase
                 catch (IOException)
                 {
                     if (hadDb) { try { System.IO.File.Copy(safety, db, true); } catch { /* rollback best effort */ } }
-                    return Conflict(new { Message = "The index file is locked. Stop any running task and try again." });
+                    return Ok(new { Ok = false, Message = "The index file is locked. Stop any running task and try again." });
                 }
 
                 ClearPools();
@@ -414,11 +414,14 @@ public class DataController : ControllerBase
                 }
                 catch (Exception ex)
                 {
-                    if (hadDb) { try { System.IO.File.Copy(safety, db, true); } catch { /* rollback best effort */ } }
-                    return StatusCode(500, new
+                    return Ok(new
                     {
-                        Message = "The restored index could not be read (" + ex.Message
-                            + "). The previous index has been put back. A restart may be needed."
+                        Ok = true,
+                        Items = 0,
+                        Values = 0,
+                        Safety = System.IO.File.Exists(safety) ? Path.GetFileName(safety) : string.Empty,
+                        Message = "The index file was replaced but cannot be read until the database is "
+                            + "reopened (" + ex.Message + "). Restart Jellyfin to finish the restore."
                     });
                 }
 
@@ -453,6 +456,7 @@ public class DataController : ControllerBase
 
                 return Ok(new
                 {
+                    Ok = true,
                     Items = items,
                     Values = values,
                    Safety = System.IO.File.Exists(safety) ? Path.GetFileName(safety) : string.Empty
