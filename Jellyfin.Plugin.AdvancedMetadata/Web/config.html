@@ -579,8 +579,8 @@
     <div id="restoreStatus" class="am-status"></div>
 
     <div class="am-hint" style="max-width:680px; margin-top:16px">
-     <strong>A restore needs a Jellyfin restart to take effect.</strong> The database file is replaced on
-      disk, and the running server keeps its old handle open. Restart below once the restore reports done.
+    The plugin closes and reopens the database itself during a restore, so a restart is normally not
+      needed. If the index counts on this page look wrong afterwards, attempt a restart of Jellyfin from here.
     </div>
     <div class="am-actions">
       <button id="btnRestart" class="am-btn am-btn-green">Restart Jellyfin</button>
