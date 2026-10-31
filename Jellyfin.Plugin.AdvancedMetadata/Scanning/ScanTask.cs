@@ -185,13 +185,16 @@ public class ScanTask : IScheduledTask
             var skipped = 0;
             var values = 0;
             var errors = 0;
+            var startedAt = DateTime.UtcNow;
 
             try
             {
-                foreach (var item in items)
+               foreach (var item in items)
                 {
                     ct.ThrowIfCancellationRequested();
                     done++;
+
+                    var itemClock = System.Diagnostics.Stopwatch.StartNew();
 
                     if (items.Count > 0) { progress.Report(done * 100.0 / items.Count); }
 
@@ -205,11 +208,12 @@ public class ScanTask : IScheduledTask
                         if (done % (CommitEvery * 10) == 0) { _store.CheckpointPassive(); }
                     }
 
-                    if (done % 1000 == 0)
+                    if (done % 100 == 0)
                     {
+                        var secs = Math.Max(1.0, (DateTime.UtcNow - startedAt).TotalSeconds);
                         _logger.LogInformation(
-                            "Advanced Metadata: heartbeat {Done}/{Total} (skipped {Skipped}, indexed {Values})",
-                            done, items.Count, skipped, values);
+                            "Advanced Metadata: heartbeat {Done}/{Total} at {Rate:F2}/s (skipped {Skipped}, indexed {Values})",
+                            done, items.Count, done / secs, skipped, values);
                     }
 
                     var path = item.Path;
@@ -323,11 +327,18 @@ public class ScanTask : IScheduledTask
                                 }
                             }
                         }
-                        catch (Exception ex)
+                       catch (Exception ex)
                         {
                             errors++;
                             _logger.LogWarning(ex, "Advanced Metadata: mapping {Tag} failed on {Path}", m.SourceTag, path);
                         }
+                    }
+
+                    if (done <= 20)
+                    {
+                        _logger.LogInformation(
+                            "Advanced Metadata: item {Done} took {Ms}ms ({Mappings} mapping(s))",
+                            done, itemClock.ElapsedMilliseconds, mappings.Count);
                     }
                 }
             }
