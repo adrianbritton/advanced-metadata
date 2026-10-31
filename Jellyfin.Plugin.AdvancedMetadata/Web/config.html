@@ -118,14 +118,14 @@
   .am-act-danger:hover { background: #4a2626; }
   .am-btn-danger { background: #b5651d; border-color: #b5651d; color: #ffffff; }
   .am-btn-danger:hover { background: #c9762b; }
-  .am-btn-green { background: #2e8b57; color: #fff; border-color: #2e8b57; }
-  .am-btn-green:hover { background: #26734a; }
-  .am-risk { border: 1px solid #6b3030; border-left: 5px solid #e5534b; background: rgba(229,83,75,.12);
+  .am-btn-green { background: #2ecc71; color: #10240f; border-color: #2ecc71; font-weight: 600; }
+  .am-btn-green:hover { background: #27ae60; }
+  .am-risk { border: 1px solid #6b3030; border-left: 5px solid #e5534b; background: #241618;
              border-radius: 8px; padding: 14px 16px; max-width: 680px; margin: 12px 0 20px; color: #ffc9c4; }
   .am-risk strong { color: #ffd9d5; display: block; margin-bottom: 6px; font-size: 1.02em; }
   .am-risk ul { margin: 6px 0 0; padding-left: 20px; }
   .am-risk li { margin-bottom: 5px; }
-  .am-paused { border: 1px solid #6b5220; border-left: 5px solid #e2a03f; background: rgba(226,160,63,.12);
+  .am-paused { border: 1px solid #6b5220; border-left: 5px solid #e2a03f; background: #241d10;
                border-radius: 8px; padding: 12px 15px; max-width: 680px; margin: 12px 0; color: #f0cf94; }
   #AdvancedMetadataConfigPage input[type="file"] { color: #c9d1d9; font-family: inherit; font-size: 14px; }
   @media (max-width: 760px) {
@@ -391,7 +391,7 @@
       <tbody id="dataRows"></tbody>
     </table>
 
-    <div id="dataEmpty" class="am-empty">Nothing searched yet.</div>
+    <div id="dataEmpty" class="am-empty">No Results Found.</div>
     <div class="am-actions">
       <button id="btnMore" class="am-btn am-btn-primary" style="display:none">Show more</button>
     </div>
@@ -478,6 +478,7 @@
     <div class="am-card">
       <div class="am-kv"><span>Store folder</span><span id="kvStoreFolder">—</span></div>
       <div class="am-kv"><span>Index file</span><span id="kvStorePath">—</span></div>
+      <div class="am-kv"><span>Last restore</span><span id="kvLastRestore">—</span></div>
       <div class="am-kv"><span>Schema version</span><span id="kvSchema">—</span></div>
       <div class="am-kv"><span>Mappings</span><span id="kvMappingCount">—</span></div>
       <div class="am-kv"><span>Indexed items</span><span id="kvItemCount">—</span></div>
@@ -855,6 +856,9 @@
     Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
       p.classList.toggle('active', p.getAttribute('data-panel') === name);
     });
+    if (name !== 'advanced') {
+      ['backupStatus', 'restoreStatus', 'restartStatus'].forEach(function (id) { clearStatus(id); });
+    }
     if (name === 'scan') { refreshTask(); loadLibraries(); }
     if (name === 'data') { refreshDataFields(); loadInfo(); }
   };
@@ -973,6 +977,7 @@ function renderManage() {
       return String(av).localeCompare(String(bv), undefined, { numeric: true }) * MANAGE_SORT.dir;
     });
     $('manageEmpty').style.display = list.length ? 'none' : 'block';
+    if ($('btnDeleteAll')) { $('btnDeleteAll').disabled = !list.length; }
     if ($('kvMappingCount')) { $('kvMappingCount').textContent = list.length; }
 
     var tbl = body.closest ? body.closest('table') : null;
@@ -1147,8 +1152,8 @@ function renderManage() {
       apiPost('AdvancedMetadataData/ClearAll').then(function () {
         cfg.Mappings = [];
         return saveConfig(cfg).then(function () {
-          renderManage(); refreshDataFields();
-          setStatus('manageStatus', 'ok', 'All mappings deleted and the index emptied.');
+          renderManage(); clearDataResults();
+          setStatus('manageStatus', 'ok', 'All mappings and index values deleted.');
           loadInfo();
         });
       }).catch(function (e) { setStatus('manageStatus', 'err', 'DELETE FAILED: ' + e.message); });
@@ -1623,9 +1628,20 @@ var LIB_TYPES = {
       if (!task) { return; }
       if ($('chkFull').checked && !window.confirm(
           'WARNING: Running a full scan will take significantly longer and may impact the performance of your environment. Do you want to continue?')) { return; }
-        cfg.FullRescanRequested = $('chkFull').checked;
-        cfg.PendingScanLibraryId = $('scanLibrary').value;
-        saveConfig(cfg)
+       cfg.FullRescanRequested = $('chkFull').checked;
+
+    var known = cfg.KnownMappingIds || [];
+    var fresh = (cfg.Mappings || []).filter(function (m) { return known.indexOf(m.Id) < 0; }).length;
+    if (!cfg.FullRescanRequested && fresh > 0 &&
+        !window.confirm('WARNING: ' + fresh + ' mapping(s) have not been scanned yet.\n\n'
+          + 'An incremental scan only looks at new or changed tracks, so these mappings will be skipped '
+          + 'on tracks that are already indexed.\n\nTick Full rescan to cover them. Continue with an '
+          + 'incremental scan anyway?')) {
+      return;
+    }
+
+    cfg.PendingScanLibraryId = $('scanLibrary').value;
+    saveConfig(cfg)
         .then(function () { return apiPost('ScheduledTasks/Running/' + task.Id); })
         .then(function () {
       setStatus('scanStatus', 'info', 'Scan started at ' + new Date().toLocaleTimeString());
@@ -1654,6 +1670,11 @@ var LIB_TYPES = {
   function loadInfo() {
     apiGet('AdvancedMetadataData/Info').then(function (i) {
       if ($('kvStoreFolder')) { $('kvStoreFolder').textContent = i.StoreFolder || '—'; }
+      if ($('kvLastRestore')) {
+        $('kvLastRestore').textContent = i.LastRestore
+          ? fmt(i.LastRestore) + ' — ' + (i.LastRestoreItems || 0) + ' items'
+          : 'Never restored';
+      }
       if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || '—'; }
       if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || '—'; }
       if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
