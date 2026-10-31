@@ -240,6 +240,8 @@ public class DataController : ControllerBase
             return NotFound(new { Message = "There is no index file to back up yet." });
         }
 
+        _store.Checkpoint();
+
         var work = Path.Combine(Path.GetTempPath(), "am-bk-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         var zipPath = Path.Combine(work, "backup.zip");
@@ -248,8 +250,13 @@ public class DataController : ControllerBase
         {
             using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
             {
-                AddFile(zip, db, "index.db");
-                AddFile(zip, db + "-wal", "index.db-wal");
+               AddFile(zip, db, "index.db");
+
+                var walPath = db + "-wal";
+                if (System.IO.File.Exists(walPath) && new FileInfo(walPath).Length > 0)
+                {
+                    AddFile(zip, walPath, "index.db-wal");
+                }
 
                 var counts = _store.Counts();
                 AddText(zip, "manifest.txt",
@@ -386,14 +393,14 @@ public class DataController : ControllerBase
 
                 try
                 {
-                    var wal = db + "-wal";
-                    var shm = db + "-shm";
-                    if (System.IO.File.Exists(wal)) { System.IO.File.Delete(wal); }
-                    if (System.IO.File.Exists(shm)) { System.IO.File.Delete(shm); }
+                   var wal = db + "-wal";
+                    _store.CloseForMaintenance();
                     System.IO.File.Copy(staged, db, true);
 
                     var stagedWal = Path.Combine(work, "index.db-wal");
                     if (System.IO.File.Exists(stagedWal)) { System.IO.File.Copy(stagedWal, wal, true); }
+
+                    _store.Reopen();
                 }
                 catch (IOException)
                 {
