@@ -242,6 +242,9 @@ public class ScanTask : IScheduledTask
                         continue;
                     }
 
+                    var raw = ReadRawTags(path, mappings.Select(m => m.SourceTag)
+                        .Concat(new[] { "ARTIST", "ALBUMARTIST", "ALBUM" }));
+
                     var albumId = ResolveAlbumId(item);
                     var albumItem = albumId.HasValue ? _library.GetItemById(albumId.Value) : null;
 
@@ -253,17 +256,17 @@ public class ScanTask : IScheduledTask
 
                     if (string.IsNullOrWhiteSpace(artist))
                     {
-                        artist = ReadTag(path, "ARTIST", delims).FirstOrDefault();
+                        artist = SplitValues(raw, "ARTIST", delims).FirstOrDefault();
                     }
 
                     if (string.IsNullOrWhiteSpace(albumArtist))
                     {
-                        albumArtist = ReadTag(path, "ALBUMARTIST", delims).FirstOrDefault() ?? artist;
+                        albumArtist = SplitValues(raw, "ALBUMARTIST", delims).FirstOrDefault() ?? artist;
                     }
 
                     if (string.IsNullOrWhiteSpace(album))
                     {
-                        album = ReadTag(path, "ALBUM", delims).FirstOrDefault();
+                        album = SplitValues(raw, "ALBUM", delims).FirstOrDefault();
                     }
 
                     long itemId;
@@ -293,7 +296,7 @@ public class ScanTask : IScheduledTask
                         else if (mode == "remove") { mDelims = delims.Where(c => extra.IndexOf(c) < 0).ToArray(); }
                         else { mDelims = delims.Concat(extra.ToCharArray()).Distinct().ToArray(); }
                         if (mDelims.Length == 0) { mDelims = new[] { '/', '|', ';', ':' }; }
-                        var vals = ReadTag(path, m.SourceTag, mDelims);
+                        var vals = SplitValues(raw, m.SourceTag, mDelims);
 
                         // On a full scan an empty result still has to overwrite, or removed tags linger.
                         if (vals.Count == 0 && !full) { continue; }
@@ -458,52 +461,73 @@ public class ScanTask : IScheduledTask
         }
     }
 
-    private static List<string> ReadTag(string path, string tag, char[] delimiters)
+   private static Dictionary<string, List<string>> ReadRawTags(string path, IEnumerable<string> tags)
     {
-        var result = new List<string>();
-        var wanted = tag.Trim().ToUpperInvariant();
+        var wanted = tags
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in wanted) { result[t] = new List<string>(); }
 
         try
         {
             using var f = TagLib.File.Create(path);
             var t = f.Tag;
+            var id3 = f.GetTag(TagLib.TagTypes.Id3v2) as TagLib.Id3v2.Tag;
+            var xiph = f.GetTag(TagLib.TagTypes.Xiph) as TagLib.Ogg.XiphComment;
 
-            switch (wanted)
+            foreach (var name in wanted)
             {
-                case "ARTIST": result.AddRange(t.Performers); break;
-                case "ALBUMARTIST": result.AddRange(t.AlbumArtists); break;
-                case "ALBUM": if (!string.IsNullOrWhiteSpace(t.Album)) { result.Add(t.Album); } break;
-                case "TITLE": if (!string.IsNullOrWhiteSpace(t.Title)) { result.Add(t.Title); } break;
-                case "GENRE": result.AddRange(t.Genres); break;
-                case "COMPOSER": result.AddRange(t.Composers); break;
-                case "YEAR": if (t.Year > 0) { result.Add(t.Year.ToString(CultureInfo.InvariantCulture)); } break;
-                case "TRACKNUMBER": if (t.Track > 0) { result.Add(t.Track.ToString(CultureInfo.InvariantCulture)); } break;
-                case "DISCNUMBER": if (t.Disc > 0) { result.Add(t.Disc.ToString(CultureInfo.InvariantCulture)); } break;
-            }
+                var up = name.ToUpperInvariant();
+                var list = result[name];
 
-            if (f.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3)
-            {
-                foreach (var frame in id3.GetFrames<TagLib.Id3v2.UserTextInformationFrame>())
+                switch (up)
                 {
-                    if (string.Equals(frame.Description, wanted, StringComparison.OrdinalIgnoreCase))
+                    case "ARTIST": list.AddRange(t.Performers); break;
+                    case "ALBUMARTIST": list.AddRange(t.AlbumArtists); break;
+                    case "ALBUM": if (!string.IsNullOrWhiteSpace(t.Album)) { list.Add(t.Album); } break;
+                    case "TITLE": if (!string.IsNullOrWhiteSpace(t.Title)) { list.Add(t.Title); } break;
+                    case "GENRE": list.AddRange(t.Genres); break;
+                    case "COMPOSER": list.AddRange(t.Composers); break;
+                    case "YEAR": if (t.Year > 0) { list.Add(t.Year.ToString(CultureInfo.InvariantCulture)); } break;
+                    case "TRACKNUMBER": if (t.Track > 0) { list.Add(t.Track.ToString(CultureInfo.InvariantCulture)); } break;
+                    case "DISCNUMBER": if (t.Disc > 0) { list.Add(t.Disc.ToString(CultureInfo.InvariantCulture)); } break;
+                }
+
+                if (id3 is not null)
+                {
+                    foreach (var frame in id3.GetFrames<TagLib.Id3v2.UserTextInformationFrame>())
                     {
-                        result.AddRange(frame.Text);
+                        if (string.Equals(frame.Description, up, StringComparison.OrdinalIgnoreCase))
+                        {
+                            list.AddRange(frame.Text);
+                        }
                     }
                 }
-            }
 
-            if (f.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
-            {
-                var field = xiph.GetField(wanted);
-                if (field is not null) { result.AddRange(field); }
+                if (xiph is not null)
+                {
+                    var field = xiph.GetField(up);
+                    if (field is not null) { list.AddRange(field); }
+                }
             }
         }
         catch
         {
-            // unreadable file
+            // unreadable file; every mapping simply sees no values
         }
 
-        return result
+        return result;
+    }
+
+    private static List<string> SplitValues(Dictionary<string, List<string>> raw, string tag, char[] delimiters)
+    {
+        if (!raw.TryGetValue(tag.Trim(), out var list) || list.Count == 0) { return new List<string>(); }
+
+        return list
             .Where(v => !string.IsNullOrWhiteSpace(v))
             .SelectMany(v => v.Split(delimiters, StringSplitOptions.RemoveEmptyEntries))
             .Select(v => v.Trim())
