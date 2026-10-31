@@ -28,7 +28,8 @@ public class MetadataStore
         var dir = Path.Combine(paths.DataPath, "advancedmetadata");
         Directory.CreateDirectory(dir);
         _dbPath = Path.Combine(dir, "index.db");
-        Init();
+        try { Init(); }
+        catch (Exception ex) { Log("Store unavailable: " + ex.Message); }
     }
 
     public string DbPath => _dbPath;
@@ -53,6 +54,31 @@ public class MetadataStore
         var fi = new FileInfo(path);
         if (fi.Exists && fi.Length > 400_000) { File.WriteAllText(path, string.Empty); }
         File.AppendAllText(path, text);
+    }
+
+    /// <summary>Flushes the write-ahead log into the main file so a copy is self-contained.</summary>
+    public void Checkpoint()
+    {
+        try
+        {
+            using var c = NewConn();
+            Exec(c, "PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+        catch { }
+    }
+
+    /// <summary>Closes everything so the database file can be replaced underneath.</summary>
+    public void CloseForMaintenance()
+    {
+        EndBatch();
+        DropSideFiles();
+    }
+
+    /// <summary>Reopens after the file has been replaced. Safe to call when nothing was replaced.</summary>
+    public void Reopen()
+    {
+        try { SqliteConnection.ClearAllPools(); } catch { }
+        Init();
     }
 
     public long SizeBytes
@@ -125,10 +151,57 @@ public class MetadataStore
 
     private void Init()
     {
+        try
+        {
+            InitInner();
+        }
+        catch (SqliteException ex)
+        {
+            Log("Init failed: " + ex.Message + " — clearing WAL side files and retrying");
+            DropSideFiles();
+            try
+            {
+                InitInner();
+            }
+            catch (SqliteException ex2)
+            {
+                Log("Init failed again: " + ex2.Message + " — moving the index aside and starting fresh");
+                try
+                {
+                    if (File.Exists(_dbPath))
+                    {
+                        File.Move(_dbPath, _dbPath + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
+                    }
+                }
+                catch { }
+
+                DropSideFiles();
+                InitInner();
+            }
+        }
+    }
+
+    /// <summary>Releases every handle and removes the WAL side files.</summary>
+    private void DropSideFiles()
+    {
+        try { SqliteConnection.ClearAllPools(); } catch { }
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            try
+            {
+                var p = _dbPath + suffix;
+                if (File.Exists(p)) { File.Delete(p); }
+            }
+            catch { }
+        }
+    }
+
+    private void InitInner()
+    {
         using var c = NewConn();
+        try { Exec(c, "PRAGMA journal_mode=WAL;"); } catch { }
 
         Exec(c, @"
-PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, jellyfin_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, path TEXT, mtime INTEGER, size INTEGER);
 CREATE TABLE IF NOT EXISTS fields(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, display TEXT NOT NULL, hierarchy TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS vals(item_id INTEGER NOT NULL, field_id INTEGER NOT NULL, value TEXT NOT NULL);
