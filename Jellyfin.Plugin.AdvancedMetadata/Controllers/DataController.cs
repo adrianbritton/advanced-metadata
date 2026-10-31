@@ -350,10 +350,17 @@ public class DataController : ControllerBase
                         return BadRequest(new { Message = "The archive does not contain index.db." });
                     }
     
-                    dbEntry.ExtractToFile(staged, true);
+                   dbEntry.ExtractToFile(staged, true);
                     if (!IsSqlite(staged))
                     {
-                        return BadRequest(new { Message = "index.db inside the archive is not a SQLite database." });
+                        return Ok(new { Ok = false, Message = "index.db inside the archive is not a SQLite database." });
+                    }
+
+                    var walEntry = zip.Entries.FirstOrDefault(e =>
+                        string.Equals(e.Name, "index.db-wal", StringComparison.OrdinalIgnoreCase));
+                    if (walEntry is not null)
+                    {
+                        walEntry.ExtractToFile(Path.Combine(work, "index.db-wal"), true);
                     }
     
                     var jsonEntry = zip.Entries.FirstOrDefault(e =>
@@ -380,8 +387,13 @@ public class DataController : ControllerBase
                 try
                 {
                     var wal = db + "-wal";
+                    var shm = db + "-shm";
                     if (System.IO.File.Exists(wal)) { System.IO.File.Delete(wal); }
+                    if (System.IO.File.Exists(shm)) { System.IO.File.Delete(shm); }
                     System.IO.File.Copy(staged, db, true);
+
+                    var stagedWal = Path.Combine(work, "index.db-wal");
+                    if (System.IO.File.Exists(stagedWal)) { System.IO.File.Copy(stagedWal, wal, true); }
                 }
                 catch (IOException)
                 {
