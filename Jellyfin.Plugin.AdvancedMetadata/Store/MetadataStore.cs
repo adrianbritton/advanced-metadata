@@ -130,11 +130,14 @@ public class MetadataStore
         return c;
     }
 
-   private T Read<T>(Func<SqliteConnection, T> fn)
+  private T Read<T>(Func<SqliteConnection, T> fn)
     {
-        // WAL readers never block on the batch writer, so give them their own connection.
-        using var c = NewConn();
-        return fn(c);
+        lock (SharedGate)
+        {
+            if (_shared is not null) { return fn(_shared); }
+            using var c = NewConn();
+            return fn(c);
+        }
     }
 
     private T Write<T>(Func<SqliteConnection, T> fn)
@@ -274,6 +277,7 @@ public class MetadataStore
     {
         using var c = NewConn();
         try { Exec(c, "PRAGMA journal_mode=WAL;"); } catch { }
+        try { Exec(c, "PRAGMA synchronous=NORMAL;"); } catch { }
 
         Exec(c, @"
 CREATE TABLE IF NOT EXISTS items(id INTEGER PRIMARY KEY, jellyfin_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, name TEXT, artist TEXT, album TEXT, path TEXT, mtime INTEGER, size INTEGER);
