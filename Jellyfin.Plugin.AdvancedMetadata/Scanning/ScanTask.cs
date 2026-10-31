@@ -263,7 +263,8 @@ public class ScanTask : IScheduledTask
                     long itemId;
                     try
                     {
-                        itemId = _store.UpsertItem(key, item.GetType().Name, item.Name, artist, album, path, mtime, size);
+                        itemId = _store.UpsertItem(key, item.GetType().Name,
+                            item.Name ?? Path.GetFileNameWithoutExtension(path), artist, album, path, mtime, size);
                         if (albumId.HasValue) { _store.SetItemParent(key, albumId.Value.ToString("N")); }
                     }
                     catch (Exception ex)
@@ -291,35 +292,50 @@ public class ScanTask : IScheduledTask
                         // On a full scan an empty result still has to overwrite, or removed tags linger.
                         if (vals.Count == 0 && !full) { continue; }
 
-                        _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
-                        _store.ApplyOverrides(key, m.SourceTag);
-                        values += vals.Count;
-
-                        if (vals.Count == 0) { continue; }
-
-                        if (albumId.HasValue && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
+                        try
                         {
-                            var aid = albumId.Value.ToString("N");
-                            var tid = _store.UpsertItem(aid, "MusicAlbum", album, albumArtist, album, null, 0, 0);
-                            _store.AddValues(tid, m.SourceTag, vals);
-                            _store.ApplyOverrides(aid, m.SourceTag);
-                        }
+                            _store.ReplaceFieldValues(itemId, m.SourceTag, vals);
+                            _store.ApplyOverrides(key, m.SourceTag);
+                            values += vals.Count;
 
-                        if (m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
-                        {
-                            foreach (var a in GetArtists(item))
+                            if (vals.Count > 0 && albumId.HasValue
+                                && m.Hierarchy.Contains("albums", StringComparison.OrdinalIgnoreCase))
                             {
-                                var aid = a.Id.ToString("N");
-                                var tid = _store.UpsertItem(aid, "MusicArtist", a.Name, a.Name, null, null, 0, 0);
+                                var aid = albumId.Value.ToString("N");
+                                var albumName = album ?? item.Name ?? "Unknown album";
+                                var albumBy = albumArtist ?? artist ?? albumName;
+                                var tid = _store.UpsertItem(aid, "MusicAlbum", albumName, albumBy, albumName, null, 0, 0);
                                 _store.AddValues(tid, m.SourceTag, vals);
                                 _store.ApplyOverrides(aid, m.SourceTag);
                             }
+
+                            if (vals.Count > 0 && m.Hierarchy.Contains("artists", StringComparison.OrdinalIgnoreCase))
+                            {
+                                foreach (var a in GetArtists(item))
+                                {
+                                    var aid = a.Id.ToString("N");
+                                    var an = string.IsNullOrWhiteSpace(a.Name) ? (artist ?? "Unknown artist") : a.Name;
+                                    var tid = _store.UpsertItem(aid, "MusicArtist", an, an, null, null, 0, 0);
+                                    _store.AddValues(tid, m.SourceTag, vals);
+                                    _store.ApplyOverrides(aid, m.SourceTag);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            errors++;
+                            _logger.LogWarning(ex, "Advanced Metadata: mapping {Tag} failed on {Path}", m.SourceTag, path);
                         }
                     }
                 }
             }
-            finally
+           finally
             {
+                cfg.LastScanValues = values;
+                cfg.LastScanSkipped = skipped;
+                cfg.LastScanErrors = errors;
+                cfg.LastScanItems = done;
+                plugin.UpdateConfiguration(cfg);
                 _store.EndBatch();
             }
 
@@ -346,8 +362,9 @@ public class ScanTask : IScheduledTask
         }
         catch (Exception ex)
         {
+            var detail = ex.ToString();
             cfg.LastScanStatus = "Failed To Execute";
-            cfg.LastScanError = ex.Message;
+            cfg.LastScanError = detail.Length > 700 ? detail.Substring(0, 700) : detail;
             cfg.LastScanFinishedUtc = DateTime.UtcNow;
             plugin.UpdateConfiguration(cfg);
             _logger.LogError(ex, "Advanced Metadata scan failed");
