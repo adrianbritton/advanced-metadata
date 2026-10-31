@@ -132,12 +132,9 @@ public class MetadataStore
 
    private T Read<T>(Func<SqliteConnection, T> fn)
     {
-        lock (SharedGate)
-        {
-            if (_shared is not null) { return fn(_shared); }
-            using var c = NewConn();
-            return fn(c);
-        }
+        // WAL readers never block on the batch writer, so give them their own connection.
+        using var c = NewConn();
+        return fn(c);
     }
 
     private T Write<T>(Func<SqliteConnection, T> fn)
