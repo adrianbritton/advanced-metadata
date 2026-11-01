@@ -220,6 +220,11 @@ public class DataController : ControllerBase
     [HttpPost("ClearAll")]
     public ActionResult ClearAll()
     {
+        if (ScanRunning())
+        {
+            return Ok(new { Ok = false, Message = "A scan is running.", Removed = 0 });
+        }
+
         var before = _store.Counts();
         _store.ClearAll();
         return Ok(new { Removed = before.Values });
