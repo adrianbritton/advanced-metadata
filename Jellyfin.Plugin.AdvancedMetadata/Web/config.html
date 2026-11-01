@@ -292,8 +292,9 @@
       <button id="btnDeleteAll" class="am-btn am-btn-danger">Delete All Mappings</button>
     </div>
     <div class="am-hint" style="max-width:620px">
-      Deleting a mapping removes the mapping <strong>and</strong> its indexed values. Deleting all
-      mappings empties the index completely. Your audio files and Jellyfin's database are never touched.
+     Deleting a mapping removes the mapping <strong>and</strong> its indexed values.
+      Deleting all mappings empties the index completely. <strong>Reindex Database</strong> clears
+      every indexed value and every edit, then rebuilds the database with a full scan automatically. Your audio files and Jellyfin's database are never touched.
     </div>
     <div id="manageStatus" class="am-status"></div>
   </div>
@@ -466,14 +467,14 @@
       <strong>This page can destroy plugin data. Read before you press anything.</strong>
       <ul>
         <li><b>Reindex Database</b> deletes every indexed value and every edit, then rebuilds with a full scan. <b>Delete All Mappings</b> empties the index and keeps it empty.</li>
-        <li><b>Reset All Data Overrides</b> throws away every edit and deletion you have made.</li>
+        <li><b>Reset All Data Overrides</b> resets every manual edit and deletion you have made.</li>
         <li><b>Restore</b> overwrites the index <em>and</em> every mapping with the contents of a backup. Anything edited since that backup was made is gone.</li>
         <li>Download a plugin backup from this page before you change anything here.</li>
       </ul>
     </div>
     <p class="am-hint" style="max-width:680px; margin-top:-8px">
       None of this touches your media files or Jellyfin's own database. The worst case here is a lost
-      index, which a scan rebuilds from the files.
+      index, which a new scan can rebuild from your files.
     </p>
 
     <h3>Store</h3>
@@ -512,17 +513,17 @@
 
   <h3>Maintenance</h3>
     <div class="am-actions">
-      <button id="btnRebuild" class="am-btn">Reindex Database</button>
+      <button id="btnRebuild" class="am-btn am-btn-primary">Reindex Database</button>
     </div>
     <div class="am-hint" style="max-width:620px">
-      Clears every indexed value but keeps your mappings. Run a scan afterwards.
+      Keeps your mappings, but clears every indexed value and initiates a new scan.
     </div>
 
     <div class="am-actions">
       <button id="btnResetOverrides" class="am-btn am-btn-danger">Reset All Data Overrides</button>
     </div>
     <div class="am-hint" style="max-width:620px">
-      Removes <strong>every</strong> edit and deletion you have made to indexed values, and restores
+      Removes <strong>every</strong> manual edit and deletion you have made to indexed values, and restores
       everything from your files on the next scan. Mappings are not affected.
     </div>
 
@@ -534,8 +535,7 @@
 
     <div id="backupPaused" class="am-paused" style="display:none">
       <strong>Backup and restore are paused.</strong> A scan or an update is running, so the index is
-      being written to. A copy taken now could catch it half-written, and a restore could be
-      overwritten by the write still in flight. Both resume on their own when the activity stops.
+      being written to. Both functions resume on their own when the scanning activity stops.
     </div>
 
     <div class="am-card" style="max-width:680px">
@@ -584,8 +584,7 @@
       needed. If the index counts on this page look wrong afterwards, attempt a restart of Jellyfin from here.
     </div>
     <div class="am-actions">
-      <button id="btnRestart" class="am-btn"
-          style="background:#2ecc71;color:#10240f;border-color:#2ecc71;font-weight:600">Restart Jellyfin</button>
+      <button id="btnRestart" class="am-btn am-btn-primary">Restart Jellyfin</button>
     </div>
     <div id="restartStatus" class="am-status"></div>
   </div>
@@ -859,9 +858,10 @@
     Array.prototype.forEach.call(document.querySelectorAll('.am-panel'), function (p) {
       p.classList.toggle('active', p.getAttribute('data-panel') === name);
     });
-    if (name !== 'advanced') {
-      ['backupStatus', 'restoreStatus', 'restartStatus'].forEach(function (id) { clearStatus(id); });
-    }
+   ['createStatus', 'manageStatus', 'dataStatus', 'scanStatus', 'bulkStatus',
+     'backupStatus', 'restoreStatus', 'restartStatus'].forEach(function (id) {
+      if (id.indexOf(name) < 0) { clearStatus(id); }
+    });
     if (name === 'scan') { refreshTask(); loadLibraries(); }
     if (name === 'data') { refreshDataFields(); loadInfo(); }
   };
@@ -1498,7 +1498,16 @@ function deleteValue(r) {
     var state = task.State || 'Idle';
     var running = state === 'Running' || state === 'Cancelling';
     if (wasRunning && !running) {
-      setStatus('scanStatus', 'ok', 'Scan stopped. The values indexed so far are kept.');
+      var ended = cfg.LastScanStatus || '';
+      if (ended === 'Cancelled') {
+        setStatus('scanStatus', 'warn', 'Scan stopped. The values indexed so far are kept.');
+      } else if (ended === 'Complete') {
+        setStatus('scanStatus', 'ok', 'Scan complete — ' + (cfg.LastScanValues || 0) + ' value(s) indexed.');
+      } else if (ended === 'Failed To Execute') {
+        setStatus('scanStatus', 'err', 'Scan failed. See the Last scan card below.');
+      } else {
+        clearStatus('scanStatus');
+      }
     }
     wasRunning = running;
     scanRunning = running;
