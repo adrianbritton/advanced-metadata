@@ -135,8 +135,10 @@ public class DataController : ControllerBase
     {
         var lim = Math.Clamp(limit ?? 300, 1, 2000);
         var off = Math.Max(0, offset ?? 0);
-        var result = _store.BrowseField(field ?? string.Empty, q, kind, onlyOverrides == true,
-                                        sort, desc == true, letter, lim, off);
+        var result = _store.BrowseField(field ?? string.Empty, q, kind,
+                                        onlyOverrides: onlyOverrides == true,
+                                        sort: sort, desc: desc == true, letter: letter,
+                                        limit: lim, offset: off);
         return Ok(new
         {
             Total = result.Total,
@@ -155,8 +157,10 @@ public class DataController : ControllerBase
     {
         var lim = Math.Clamp(limit ?? 300, 1, 2000);
         var off = Math.Max(0, offset ?? 0);
-        var result = _store.BrowseItem(name ?? string.Empty, kind, onlyOverrides == true,
-                                       sort, desc == true, letter, lim, off);
+        var result = _store.BrowseItem(name ?? string.Empty, kind,
+                                       onlyOverrides: onlyOverrides == true,
+                                       sort: sort, desc: desc == true, letter: letter,
+                                       limit: lim, offset: off);
         return Ok(new
         {
             Total = result.Total,
