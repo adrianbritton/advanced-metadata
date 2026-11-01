@@ -103,6 +103,13 @@
                  border-bottom: 1px solid #21262d; padding-bottom: 8px; margin-bottom: 8px; }
   .am-itemhead strong { font-size: 1em; }
   .am-itemmeta { font-size: .78em; color: #8b949e; text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
+  .am-sortbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0 4px; font-size: .9em; }
+  .am-sortbar label { display: flex; gap: 6px; align-items: center; color: #8b949e; }
+  .am-letters { display: flex; gap: 2px; flex-wrap: wrap; }
+  .am-letter { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px;
+               padding: 2px 6px; font-size: .78em; cursor: pointer; font-family: inherit; }
+  .am-letter:hover { border-color: #8b949e; }
+  .am-letter.on { background: #2ecc71; border-color: #2ecc71; color: #10240f; font-weight: 600; }
   .am-itemrow { display: flex; gap: 14px; padding: 4px 0; font-size: .92em; }
   .am-itemrow .k { flex: 0 0 180px; color: #8b949e; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .am-itemrow .v { flex: 1; word-break: break-word; }
@@ -356,7 +363,22 @@
       <h3 style="margin:0">Results</h3>
       <button id="btnResetData" class="am-link">Reset search</button>
     </div>
-    <div id="dataCount" class="am-hint"></div>
+   <div id="dataCount" class="am-hint"></div>
+
+    <div class="am-sortbar">
+      <label>Sort
+        <select id="dataSort">
+          <option value="Artist">Artist</option>
+          <option value="Item">Title</option>
+          <option value="Album">Album</option>
+          <option value="Field">Mapping</option>
+          <option value="Value">Value</option>
+          <option value="Added">Date added</option>
+        </select>
+      </label>
+      <button id="dataDir" class="am-btn">A → Z</button>
+      <span class="am-letters" id="dataLetters"></span>
+    </div>
 
     <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:12px">
       <label class="am-checkrow" style="font-size:.9em">
@@ -1199,6 +1221,8 @@ function clearDataResults() {
     $('dataEmpty').style.display = 'block';
     $('dataCount').textContent = '';
     $('btnMore').style.display = 'none';
+    letterFilter = '';
+    buildLetters();
     clearStatus('dataStatus');
   }
 
@@ -1404,7 +1428,30 @@ function redrawData() {
     $('btnMore').style.display = (dataRowsAll.length >= PAGE_SIZE) ? 'inline-block' : 'none';
   }
 
-function loadData(append) {
+var letterFilter = '';
+
+  function buildLetters() {
+    var box = $('dataLetters');
+    if (!box) { return; }
+    box.innerHTML = '';
+    var mk = function (ch, label) {
+      var b = document.createElement('button');
+      b.className = 'am-letter' + (ch === letterFilter ? ' on' : '');
+      b.textContent = label;
+      b.addEventListener('click', function () {
+        letterFilter = ch;
+        dataOffset = 0;
+        buildLetters();
+        loadData(false);
+      });
+      box.appendChild(b);
+    };
+    mk('', 'All');
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(function (ch) { mk(ch, ch); });
+    mk('#', '#');
+  }
+
+  function loadData(append) {
     var url;
     if (dataMode === 'item') {
       var n = $('dataItem').value.trim();
@@ -1416,7 +1463,10 @@ function loadData(append) {
     }
     url += '&kind=' + encodeURIComponent($('dataKind').value);
     url += '&onlyOverrides=' + ($('chkOverrides').checked ? 'true' : 'false');
-    url += '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
+    url += '&sort=' + encodeURIComponent(sortKey.toLowerCase())
+        + '&desc=' + (sortAsc ? 'false' : 'true')
+        + '&letter=' + encodeURIComponent(letterFilter)
+        + '&limit=' + PAGE_SIZE + '&offset=' + (append ? dataOffset : 0);
 
     apiGet(url).then(function (res) {
       var rows = [];
@@ -1519,6 +1569,20 @@ function deleteValue(r) {
     $('btnMore').addEventListener('click', function () { loadData(true); });
     $('btnResetData').addEventListener('click', clearDataResults);
     $('chkGrouped').addEventListener('change', redrawData);
+    buildLetters();
+
+    $('dataSort').addEventListener('change', function () {
+      sortKey = this.value;
+      dataOffset = 0;
+      loadData(false);
+    });
+
+    $('dataDir').addEventListener('click', function () {
+      sortAsc = !sortAsc;
+      this.textContent = sortAsc ? 'A → Z' : 'Z → A';
+      dataOffset = 0;
+      loadData(false);
+    });
     $('chkPaths').addEventListener('change', redrawData);
     $('chkOverrides').addEventListener('change', function () { dataOffset = 0; loadData(false); });
     var filterTimer = null;
@@ -1536,13 +1600,17 @@ function deleteValue(r) {
 
     Array.prototype.forEach.call(document.querySelectorAll('#dataTable th[data-sort]'), function (th) {
       th.addEventListener('click', function () {
-        var k = th.getAttribute('data-sort');
+       var k = th.getAttribute('data-sort');
         if (sortKey === k) { sortAsc = !sortAsc; } else { sortKey = k; sortAsc = true; }
+        $('dataSort').value = k;
+        $('dataDir').textContent = sortAsc ? 'A → Z' : 'Z → A';
+        dataOffset = 0;
         Array.prototype.forEach.call(document.querySelectorAll('#dataTable th'), function (h) {
           h.textContent = h.textContent.replace(/ [▲▼]$/, '');
         });
         th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (sortAsc ? ' ▲' : ' ▼');
         redrawData();
+        loadData(false);
       });
     });
   }
