@@ -464,7 +464,7 @@
     <div class="am-risk">
       <strong>This page can destroy plugin data. Read before you press anything.</strong>
       <ul>
-        <li><b>Rebuild Store</b> and <b>Delete All Mappings</b> empty the index. A scan rebuilds it, but you wait for the scan.</li>
+        <li><b>Reindex Database</b> deletes every indexed value and every edit, then rebuilds with a full scan. <b>Delete All Mappings</b> empties the index and keeps it empty.</li>
         <li><b>Reset All Data Overrides</b> throws away every edit and deletion you have made.</li>
         <li><b>Restore</b> overwrites the index <em>and</em> every mapping with the contents of a backup. Anything edited since that backup was made is gone.</li>
         <li>Download a plugin backup from this page before you change anything here.</li>
@@ -511,7 +511,7 @@
 
   <h3>Maintenance</h3>
     <div class="am-actions">
-      <button id="btnRebuild" class="am-btn am-btn-danger">Rebuild Store</button>
+      <button id="btnRebuild" class="am-btn">Reindex Database</button>
     </div>
     <div class="am-hint" style="max-width:620px">
       Clears every indexed value but keeps your mappings. Run a scan afterwards.
@@ -583,7 +583,8 @@
       needed. If the index counts on this page look wrong afterwards, attempt a restart of Jellyfin from here.
     </div>
     <div class="am-actions">
-      <button id="btnRestart" class="am-btn am-btn-green">Restart Jellyfin</button>
+      <button id="btnRestart" class="am-btn"
+          style="background:#2ecc71;color:#10240f;border-color:#2ecc71;font-weight:600">Restart Jellyfin</button>
     </div>
     <div id="restartStatus" class="am-status"></div>
   </div>
@@ -978,7 +979,7 @@ function renderManage() {
       return String(av).localeCompare(String(bv), undefined, { numeric: true }) * MANAGE_SORT.dir;
     });
     $('manageEmpty').style.display = list.length ? 'none' : 'block';
-    if ($('btnDeleteAll')) { $('btnDeleteAll').disabled = !list.length; }
+    if ($('btnDeleteAll')) { $('btnDeleteAll').style.display = list.length ? '' : 'none'; }
     if ($('kvMappingCount')) { $('kvMappingCount').textContent = list.length; }
 
     var tbl = body.closest ? body.closest('table') : null;
@@ -1495,6 +1496,10 @@ function deleteValue(r) {
     }
     var state = task.State || 'Idle';
     var running = state === 'Running' || state === 'Cancelling';
+    if (wasRunning && !running) {
+      setStatus('scanStatus', 'ok', 'Scan stopped. The values indexed so far are kept.');
+    }
+    wasRunning = running;
     scanRunning = running;
 
     var pct = task.CurrentProgressPercentage;
@@ -1527,6 +1532,9 @@ function deleteValue(r) {
     $('btnDeleteAll').disabled = running;
     $('btnRebuild').disabled = running;
     disableLinks(running);
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-panel="advanced"] .am-actions .am-btn'),
+      function (b) { if (b.id !== 'btnRestart') { b.disabled = running; } });
     refreshBackupGate();
   }
 
@@ -1546,6 +1554,8 @@ function deleteValue(r) {
     if ($('kvStarted')) { $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc); }
     if ($('kvFinished')) { $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc); }
   }
+
+  var wasRunning = false;
 
   function refreshTask() {
     apiGet('ScheduledTasks').then(function (tasks) {
@@ -1814,13 +1824,45 @@ function applyDiagVisibility() {
   }
 
   function wireAdvanced() {
-    $('btnRebuild').addEventListener('click', function () {
-      if (!window.confirm('Rebuild the index from scratch? This clears all indexed values but keeps your mappings. '
-          + 'You must run a scan afterwards. Continue?')) { return; }
-      apiPost('AdvancedMetadataData/ClearAll').then(function () {
-        setStatus('advancedStatus', 'ok', 'Index cleared. Run a scan to rebuild it.');
-        loadInfo();
-      }).catch(function (e) { setStatus('advancedStatus', 'err', 'REBUILD FAILED: ' + e.message); });
+  $('btnRebuild').addEventListener('click', function () {
+      if (scanRunning) {
+        setStatus('manageStatus', 'warn', 'A scan is running. Wait for it to finish, or stop it, before reindexing.');
+        return;
+      }
+
+      if (!window.confirm('Reindex the database?\n\nThis deletes every indexed value AND every edit or '
+          + 'deletion you have made, then rebuilds from your files with a full scan. Your mappings are '
+          + 'kept.\n\nContinue?')) { return; }
+
+      setStatus('manageStatus', 'info', 'Clearing the index…');
+
+      apiFetch('AdvancedMetadataData/ClearAllOverrides', {
+        method: 'POST', headers: headers(false), credentials: 'same-origin'
+      })
+        .then(function () {
+          return apiFetch('AdvancedMetadataData/ClearAll', {
+            method: 'POST', headers: headers(false), credentials: 'same-origin'
+          });
+        })
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+          var removed = 0;
+          try { removed = (JSON.parse(txt) || {}).Removed || 0; } catch (e) { removed = 0; }
+          setStatus('manageStatus', 'ok', removed + ' indexed value(s) deleted. Starting a full scan…');
+          cfg.FullRescanRequested = true;
+          cfg.PendingScanLibraryId = '';
+          return saveConfig(cfg);
+        })
+        .then(function () {
+          if (!task) {
+            setStatus('manageStatus', 'warn', 'Index cleared, but the scan task was not found. Start a scan from the Scan tab.');
+            return;
+          }
+          return apiPost('ScheduledTasks/Running/' + task.Id).then(function () {
+            setTimeout(refreshTask, 700);
+          });
+        })
+        .catch(function (e) { setStatus('manageStatus', 'err', 'REINDEX FAILED: ' + e.message); });
     });
   $('btnResetOverrides').addEventListener('click', function () {
         if (!window.confirm('WARNING: This removes EVERY value you have edited or deleted across the whole index, '
