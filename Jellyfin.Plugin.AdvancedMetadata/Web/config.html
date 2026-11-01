@@ -102,7 +102,7 @@
   .am-itemhead { display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
                  border-bottom: 1px solid #21262d; padding-bottom: 8px; margin-bottom: 8px; }
   .am-itemhead strong { font-size: 1em; }
-  .am-itemhead span { font-size: .78em; color: #8b949e; text-transform: uppercase; letter-spacing: .04em; }
+  .am-itemmeta { font-size: .78em; color: #8b949e; text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
   .am-itemrow { display: flex; gap: 14px; padding: 4px 0; font-size: .92em; }
   .am-itemrow .k { flex: 0 0 180px; color: #8b949e; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .am-itemrow .v { flex: 1; word-break: break-word; }
@@ -1277,7 +1277,7 @@ function clearDataResults() {
     });
   }
 
-  function renderGrouped(rows) {
+function renderGrouped(rows) {
     var wrap = $('dataGrouped');
     wrap.innerHTML = '';
     $('dataTable').style.display = 'none';
@@ -1294,26 +1294,48 @@ function clearDataResults() {
       groups[key].vals.push(r);
     });
 
-    order.forEach(function (key) {
-      var g = groups[key];
+    var cards = order.map(function (key) { return groups[key]; });
+    cards.sort(function (x, y) {
+      var a;
+      var b;
+      if (sortKey === 'Kind') { a = x.kind; b = y.kind; }
+      else if (sortKey === 'Artist') { a = x.artist || ''; b = y.artist || ''; }
+      else if (sortKey === 'Detail') { a = x.detail || ''; b = y.detail || ''; }
+      else { a = x.item || ''; b = y.item || ''; }
+      a = String(a).toLowerCase();
+      b = String(b).toLowerCase();
+      if (a < b) { return sortAsc ? -1 : 1; }
+      if (a > b) { return sortAsc ? 1 : -1; }
+      return 0;
+    });
+
+    var showPaths = $('chkPaths').checked;
+
+    cards.forEach(function (g) {
       var card = document.createElement('div');
       card.className = 'am-itemgroup';
 
       var head = document.createElement('div');
       head.className = 'am-itemhead';
+
+      var left = document.createElement('div');
       var t = document.createElement('strong');
       t.textContent = (g.artist ? g.artist + ' — ' : '') + g.item;
       t.title = g.detail || g.item;
-      var k = document.createElement('span');
-      k.textContent = KIND_LABEL[g.kind] || g.kind;
-      head.appendChild(t); head.appendChild(k);
+      left.appendChild(t);
+
+      var meta = document.createElement('div');
+      meta.className = 'am-itemmeta';
+      meta.textContent = (KIND_LABEL[g.kind] || g.kind) + ' · ' + g.vals.length + ' value(s)';
+      left.appendChild(meta);
+      head.appendChild(left);
       card.appendChild(head);
 
-      if ($('chkPaths').checked && g.detail) {
+      if (showPaths && g.detail) {
         var pr = document.createElement('div');
         pr.className = 'am-itemrow';
         var pk = document.createElement('div'); pk.className = 'k'; pk.textContent = 'Path';
-        var pv = document.createElement('div'); pv.className = 'v'; pv.textContent = g.detail;
+        var pv = document.createElement('div'); pv.className = 'v am-mono'; pv.textContent = g.detail;
         pr.appendChild(pk); pr.appendChild(pv);
         card.appendChild(pr);
       }
@@ -1321,9 +1343,48 @@ function clearDataResults() {
       g.vals.forEach(function (v) {
         var row = document.createElement('div');
         row.className = 'am-itemrow';
-        var kk = document.createElement('div'); kk.className = 'k'; kk.textContent = v.Field;
-        var vv = document.createElement('div'); vv.className = 'v'; vv.textContent = v.Value;
-        row.appendChild(kk); row.appendChild(vv);
+
+        var kk = document.createElement('div');
+        kk.className = 'k';
+        kk.textContent = v.Field;
+        row.appendChild(kk);
+
+        var vv = document.createElement('div');
+        vv.className = 'v';
+        vv.appendChild(document.createTextNode(v.Value));
+
+        if (v.IsOverride) {
+          var mark = document.createElement('span');
+          mark.textContent = ' ●';
+          mark.title = v.IsDeleted ? 'Deleted — hidden from the index' : 'Edited — overrides the file';
+          mark.style.color = v.IsDeleted ? '#e5534b' : '#e2a03f';
+          vv.appendChild(mark);
+
+          var rv = document.createElement('button');
+          rv.className = 'am-act';
+          rv.textContent = 'Revert';
+          rv.addEventListener('click', function () { revertValue(v); });
+          vv.appendChild(document.createTextNode(' '));
+          vv.appendChild(rv);
+        }
+
+        vv.appendChild(document.createTextNode(' '));
+        var eb = document.createElement('button');
+        eb.className = 'am-act';
+        eb.textContent = 'Edit';
+        eb.addEventListener('click', function () { editValue(v); });
+        vv.appendChild(eb);
+
+        if (!v.IsDeleted) {
+          vv.appendChild(document.createTextNode(' '));
+          var db = document.createElement('button');
+          db.className = 'am-act am-act-danger';
+          db.textContent = 'Delete';
+          db.addEventListener('click', function () { deleteValue(v); });
+          vv.appendChild(db);
+        }
+
+        row.appendChild(vv);
         card.appendChild(row);
       });
 
