@@ -366,6 +366,7 @@ public class ScanTask : IScheduledTask
             cfg.LastScanErrors = errors;
             cfg.LastScanFinishedUtc = DateTime.UtcNow;
             cfg.LastScanStatus = "Complete";
+            if (full && !scoped) { cfg.LastFullScanUtc = DateTime.UtcNow; }
             cfg.LastScanSummary = $"{done} read, {skipped} unchanged, {values} indexed, {errors} errors.";
             plugin.UpdateConfiguration(cfg);
 
