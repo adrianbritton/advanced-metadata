@@ -16,6 +16,8 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public int LastRestoreItems { get; set; }
 
+    public DateTime? LastFullScanUtc { get; set; }
+
     public List<string> Libraries { get; set; } = new();
 
 /// <summary>Ids of mappings covered by the previous scan. New ids are backfilled.</summary>
