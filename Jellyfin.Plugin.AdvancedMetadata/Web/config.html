@@ -1772,6 +1772,11 @@ var LIB_TYPES = {
           : 'Never restored';
       }
       if ($('kvStorePath')) { $('kvStorePath').textContent = i.StorePath || '—'; }
+     if (i.Version) {
+        var seen = window.localStorage.getItem('amSeenVersion');
+        if (seen && seen !== i.Version) { window.amShowTab('create'); }
+        window.localStorage.setItem('amSeenVersion', i.Version);
+      }
       if ($('kvSchema')) { $('kvSchema').textContent = i.Schema || '—'; }
       if ($('kvItemCount')) { $('kvItemCount').textContent = i.Items != null ? i.Items : '—'; }
       if ($('kvValueCount')) { $('kvValueCount').textContent = i.Values != null ? i.Values : '—'; }
