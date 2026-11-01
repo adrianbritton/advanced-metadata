@@ -111,7 +111,8 @@ public class DataController : ControllerBase
             Values = counts.Values,
             Mappings = Plugin.Instance?.Configuration.Mappings.Count ?? 0,
             LastRestore = Plugin.Instance?.Configuration.LastRestoreUtc,
-            LastRestoreItems = Plugin.Instance?.Configuration.LastRestoreItems ?? 0
+            LastRestoreItems = Plugin.Instance?.Configuration.LastRestoreItems ?? 0,
+            Version = Plugin.Instance?.Version?.ToString() ?? string.Empty
         });
     }
 
