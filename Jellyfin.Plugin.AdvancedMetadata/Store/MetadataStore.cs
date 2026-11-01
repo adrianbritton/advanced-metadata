@@ -14,7 +14,7 @@ public record FieldRow(string Name, string Display, string Hierarchy, int Items,
 
 public record OverrideRow(string JellyfinId, string Field, string OldValue, string NewValue, string CreatedUtc);
 
-public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value, bool IsOverride, bool IsDeleted, string OverrideOld);
+public record BrowseRow(string Id, string Kind, string Item, string Artist, string Album, string Detail, string Field, string Value, bool IsOverride, bool IsDeleted, string OverrideOld, string Added);
 
 public class MetadataStore
 {
@@ -294,6 +294,8 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
         AddColumn(c, "items", "artist", "TEXT");
         AddColumn(c, "items", "album", "TEXT");
         AddColumn(c, "items", "parent_id", "TEXT");
+        AddColumn(c, "items", "seen_utc", "TEXT");
+        try { Exec(c, "UPDATE items SET seen_utc = datetime('now') WHERE seen_utc IS NULL;"); } catch { }
 
         try
         {
@@ -384,10 +386,11 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
     {
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = @"INSERT INTO items(jellyfin_id, kind, name, artist, album, path, mtime, size)
-                                VALUES ($j,$k,$n,$ar,$al,$p,$m,$s)
+            cmd.CommandText = @"INSERT INTO items(jellyfin_id, kind, name, artist, album, path, mtime, size, seen_utc)
+                                VALUES ($j,$k,$n,$ar,$al,$p,$m,$s,$su)
                                 ON CONFLICT(jellyfin_id) DO UPDATE SET
-                                  kind=$k, name=$n, artist=$ar, album=$al, path=$p, mtime=$m, size=$s;";
+                                  kind=$k, name=$n, artist=$ar, album=$al, path=$p, mtime=$m, size=$s,
+                                  seen_utc=COALESCE(items.seen_utc, $su);";
             cmd.Parameters.AddWithValue("$j", jellyfinId);
             cmd.Parameters.AddWithValue("$k", kind);
             cmd.Parameters.AddWithValue("$n", (object?)name ?? DBNull.Value);
@@ -396,6 +399,7 @@ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);");
             cmd.Parameters.AddWithValue("$p", (object?)path ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$m", mtime);
             cmd.Parameters.AddWithValue("$s", size);
+            cmd.Parameters.AddWithValue("$su", DateTime.UtcNow.ToString("o"));
             cmd.ExecuteNonQuery();
         }
 
@@ -1053,14 +1057,16 @@ CASE WHEN EXISTS (SELECT 1 FROM overrides o
 0 AS isdeleted,
 COALESCE((SELECT o.old_value FROM overrides o
           WHERE o.jellyfin_id = i.jellyfin_id AND o.field = f.name AND o.new_value = v.value
-          LIMIT 1), '') AS override_old";
+          LIMIT 1), '') AS override_old,
+COALESCE(i.seen_utc,'') AS added";
 
     private const string DeletedCols = @"
 i.jellyfin_id AS id, i.kind AS kind,
 COALESCE(i.name,'') AS item, COALESCE(i.artist,'') AS artist,
 COALESCE(i.album,'') AS album, COALESCE(i.path,'') AS detail,
 f.name AS field, o.old_value AS value,
-1 AS isoverride, 1 AS isdeleted, o.old_value AS override_old";
+1 AS isoverride, 1 AS isdeleted, o.old_value AS override_old,
+COALESCE(i.seen_utc,'') AS added";
 
     private const string UnionSql =
         "SELECT " + RowCols + @"
@@ -1074,8 +1080,29 @@ f.name AS field, o.old_value AS value,
         JOIN fields f ON f.name = o.field
         WHERE o.new_value = ''";
 
-    private static BrowseResult Run(SqliteConnection c, string where,
-                                    List<(string K, object V)> args, int limit, int offset)
+    private static void AddLetter(List<string> where, List<(string K, object V)> args,
+                                  string? sort, string? letter)
+    {
+        if (string.IsNullOrWhiteSpace(letter)) { return; }
+        var col = "UPPER(substr(" + SortColumn(sort) + ",1,1))";
+        if (letter == "#") { where.Add(col + " NOT GLOB '[A-Z]'"); return; }
+        where.Add(col + " = $letter");
+        args.Add(("$letter", letter.Trim().ToUpperInvariant()));
+    }
+
+    private static string SortColumn(string? sort) => (sort ?? string.Empty).ToLowerInvariant() switch
+    {
+        "item" => "item",
+        "album" => "album",
+        "field" => "field",
+        "value" => "value",
+        "added" => "added",
+        "kind" => "kind",
+        _ => "artist"
+    };
+
+    private static BrowseResult Run(SqliteConnection c, string where, List<(string K, object V)> args,
+                                    string? sort, bool desc, int limit, int offset)
     {
         long total;
         using (var cc = c.CreateCommand())
@@ -1088,8 +1115,9 @@ f.name AS field, o.old_value AS value,
         var rows = new List<BrowseRow>();
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = "SELECT * FROM (" + UnionSql + ") x WHERE " + where +
-                              " ORDER BY artist, album, item, field, value LIMIT $lim OFFSET $off;";
+          cmd.CommandText = "SELECT * FROM (" + UnionSql + ") x WHERE " + where +
+                              " ORDER BY " + SortColumn(sort) + (desc ? " DESC" : " ASC") +
+                              ", artist, album, item, field, value LIMIT $lim OFFSET $off;";
             foreach (var (k, val) in args) { cmd.Parameters.AddWithValue(k, val); }
             cmd.Parameters.AddWithValue("$lim", limit);
             cmd.Parameters.AddWithValue("$off", offset);
@@ -1100,7 +1128,7 @@ f.name AS field, o.old_value AS value,
                 rows.Add(new BrowseRow(
                     r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
                     r.GetString(5), r.GetString(6), r.GetString(7),
-                    r.GetInt64(8) != 0, r.GetInt64(9) != 0, r.GetString(10)));
+                    r.GetInt64(8) != 0, r.GetInt64(9) != 0, r.GetString(10), r.GetString(11)));
             }
         }
 
@@ -1109,7 +1137,8 @@ f.name AS field, o.old_value AS value,
 
     /// <summary>Browse indexed values for a mapping, optionally filtered by value text and item type.</summary>
     public BrowseResult BrowseField(string field = "", string? query = null, string? kind = null,
-                                    bool onlyOverrides = false, int limit = 300, int offset = 0)
+                                    bool onlyOverrides = false, string? sort = null, bool desc = false,
+                                    string? letter = null, int limit = 300, int offset = 0)
         => Read(c =>
         {
             var where = new List<string>();
@@ -1133,14 +1162,16 @@ f.name AS field, o.old_value AS value,
                 args.Add(("$k", kind));
             }
 
-            if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
+           if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
+            AddLetter(where, args, sort, letter);
 
             return Run(c, where.Count == 0 ? "1=1" : string.Join(" AND ", where), args,
-                       Math.Max(1, limit), Math.Max(0, offset));
+                       sort, desc, Math.Max(1, limit), Math.Max(0, offset));
         });
 
     /// <summary>All indexed values for items matching a title, artist, album or filename.</summary>
     public BrowseResult BrowseItem(string name = "", string? kind = null, bool onlyOverrides = false,
+                                   string? sort = null, bool desc = false, string? letter = null,
                                    int limit = 300, int offset = 0)
         => Read(c =>
         {
@@ -1171,7 +1202,8 @@ f.name AS field, o.old_value AS value,
             }
 
             if (onlyOverrides) { where.Add("(isoverride = 1 OR isdeleted = 1)"); }
+            AddLetter(where, args, sort, letter);
 
-            return Run(c, string.Join(" AND ", where), args, Math.Max(1, limit), Math.Max(0, offset));
+            return Run(c, string.Join(" AND ", where), args, sort, desc, Math.Max(1, limit), Math.Max(0, offset));
         });
 }
