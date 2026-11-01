@@ -454,6 +454,7 @@
       <div class="am-kv"><span>Errors</span><span id="kvErrors">—</span></div>
       <div class="am-kv"><span>Started</span><span id="kvStarted">—</span></div>
       <div class="am-kv"><span>Finished</span><span id="kvFinished">—</span></div>
+      <div class="am-kv"><span>Last full scan</span><span id="kvLastFull">—</span></div>
     </div>
   </div>
 
@@ -1553,6 +1554,7 @@ function deleteValue(r) {
     if ($('kvErrors')) { $('kvErrors').textContent = cfg.LastScanErrors == null ? '—' : cfg.LastScanErrors; }
     if ($('kvStarted')) { $('kvStarted').textContent = fmt(cfg.LastScanStartedUtc); }
     if ($('kvFinished')) { $('kvFinished').textContent = fmt(cfg.LastScanFinishedUtc); }
+    if ($('kvLastFull')) { $('kvLastFull').textContent = fmt(cfg.LastFullScanUtc); }
   }
 
   var wasRunning = false;
